@@ -63,7 +63,19 @@ class tuSimple(data.Dataset):
                 # test set
                 segLabel = None
                 exist = None
+            
+            img = np.array(np.transpose(img, (2,0,1)), dtype=np.float32)
+            img = torch.Tensor(img)
+            if segLabel is not None:
+                segLabel = np.array(segLabel, dtype=np.float32)
+                segLabel = torch.LongTensor(segLabel)
 
+            '''
+            img: torch.Tensor
+            segLabel: torch.LongTensor
+            exist: np.array
+            img_name: str 
+            '''
             sample = {'img' : img,
                       'segLabel': segLabel,
                       'exist': exist,
@@ -183,26 +195,26 @@ class tuSimple(data.Dataset):
 
             list_f.close()
 
-        @staticmethod
-        def collate(batch):
-            if isinstance(batch[0]['img'], torch.Tensor):
-                img = torch.stack([b['img'] for b in batch])
-            else:
-                img = [b['img'] for b in batch]
+        # @staticmethod
+        # def collate(batch):
+        #     if isinstance(batch[0]['img'], torch.Tensor):
+        #         img = torch.stack([b['img'] for b in batch])
+        #     else:
+        #         img = [b['img'] for b in batch]
 
-            if batch[0]['segLabel'] is None:
-                segLabel = None
-                exist = None
-            elif isinstance(batch[0]['segLabel'], torch.Tensor):
-                segLabel = torch.stack([b['segLabel'] for b in batch])
-                exist = torch.stack([b['exist'] for b in batch])
-            else:
-                segLabel = [b['segLabel'] for b in batch]
-                exist = [b['exist'] for b in batch]
+        #     if batch[0]['segLabel'] is None:
+        #         segLabel = None
+        #         exist = None
+        #     elif isinstance(batch[0]['segLabel'], torch.Tensor):
+        #         segLabel = torch.stack([b['segLabel'] for b in batch])
+        #         exist = torch.stack([b['exist'] for b in batch])
+        #     else:
+        #         segLabel = [b['segLabel'] for b in batch]
+        #         exist = [b['exist'] for b in batch]
 
-            samples = {'img': img,
-                    'segLabel': segLabel,
-                    'exist': exist,
-                    'img_name': [x['img_name'] for x in batch]}
+        #     samples = {'img': img,
+        #             'segLabel': segLabel,
+        #             'exist': exist,
+        #             'img_name': [x['img_name'] for x in batch]}
 
-            return samples
+        #     return samples
