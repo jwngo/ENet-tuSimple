@@ -19,8 +19,8 @@ from models.enet import ENet
 
 class Trainer(object): 
     def __init__(self): 
-
-        with open("/Users/jiawei/ENet-tuSimple/config/tusimple_config.yaml") as file: 
+        cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
+        with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
 
@@ -67,12 +67,6 @@ class Trainer(object):
             lr=cfg['OPTIM']['LR'],
             weight_decay=cfg['OPTIM']['DECAY'],
         )
-
-    
-        
-
-        
-
                                           
 if __name__ == '__main__':
     t = Trainer() 
