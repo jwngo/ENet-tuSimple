@@ -87,7 +87,6 @@ class Trainer(object):
 
                                           
 if __name__ == '__main__':
-    print('ok')
     t = Trainer() 
 
 
