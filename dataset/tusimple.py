@@ -24,7 +24,6 @@ class tuSimple(data.Dataset):
         self.image_set = image_set
         self.transforms = transforms
 
-        print("hello")
         if not os.path.exists(os.path.join(path, "seg_label")):
             print("seg_label ground truth labels are not generated") 
             print("Labels will be generated into dir: {} ".format(os.path.join(path, "seg_label")))
