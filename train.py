@@ -17,12 +17,15 @@ import yaml
 from dataset.tusimple import tuSimple 
 from models.enet import ENet
 
+best_val_loss = 1e6
+
 class Trainer(object): 
     def __init__(self): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
+        self.max_epochs = cfg['TRAIN']['MAX_EPOCHS']
 
         input_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -76,7 +79,7 @@ class Trainer(object):
         epoch_loss = 0
         progressbar = tqdm(range(len(self.train_loader)))
 
-        for batch_idx, sample in enumerate(train_loader): 
+        for batch_idx, sample in enumerate(self.train_loader): 
             img = sample['img'].to(self.device) 
             segLabel = sample['segLabel'].to(self.device) 
 
@@ -88,8 +91,8 @@ class Trainer(object):
             self.optimizer.step() 
 
             epoch_loss += loss.item() 
-            iter_idx = epoch * len(train_loader) + batch_idx
-            progressbar.set_description("Batch loss: {:.3f}".format(epoch_loss))
+            iter_idx = epoch * len(self.train_loader) + batch_idx
+            progressbar.set_description("Batch loss: {:.3f}".format(loss.item()))
             progressbar.update(1)
 
         progressbar.close() 
@@ -101,11 +104,11 @@ class Trainer(object):
                     "best_val_loss": best_val_loss
                     }
            
-            save_name = os.path.join(os.cwd(), 'results', 'run.pth')
+            save_name = os.path.join(os.getcwd(), 'results', 'run.pth')
             torch.save(save_dict, save_name) 
             print("Model is saved: {}".format(save_name))
             print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
-    def val(epoch):
+    def val(self, epoch):
         global best_val_loss
 
         print("Val Epoch: {}".format(epoch))
@@ -125,12 +128,14 @@ class Trainer(object):
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
         progressbar.close() 
-        iter_idx = (epoch + 1) * len(train_loader) 
+        iter_idx = (epoch + 1) * len(self.train_loader) 
+        print(val_loss)
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         if val_loss < best_val_loss: 
             best_val_loss = val_loss
-            save_name = os.path.join(os.cwd(), 'results', 'run.pth') 
-            copy_name = os.path.join(os.cwd(), 'results', 'run_best.pth') 
+            save_name = os.path.join(os.getcwd(), 'results', 'run.pth') 
+            copy_name = os.path.join(os.getcwd(), 'results', 'run_best.pth') 
+            print("val loss is lower than best val loss! Model saved to {}".format(copy_name))
             shutil.copyfile(save_name, copy_name) 
 
 
@@ -142,14 +147,13 @@ class Trainer(object):
                                           
 if __name__ == '__main__':
     t = Trainer() 
-    global best_val_loss 
 
     start_epoch = 0 
-    for epoch in range(start_epoch, cfg['TRAIN']['MAX_EPOCHS']):
+    for epoch in range(start_epoch, t.max_epochs):
         t.train(epoch) 
         if epoch % 1 == 0: 
             print("Validation") 
-            val(epoch) 
+            t.val(epoch) 
 
 
     

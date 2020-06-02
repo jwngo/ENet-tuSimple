@@ -57,15 +57,23 @@ class tuSimple(data.Dataset):
     def __getitem__(self,idx):
         img = cv2.imread(self.img_list[idx])
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = cv2.resize(img, (368,640), interpolation=cv2.INTER_CUBIC)
         if self.image_set != 'test': 
             segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
+            # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
+            segLabel = cv2.resize(segLabel, (368,640), interpolation=cv2.INTER_NEAREST)
             exist = np.array(self.exist_list[idx])
         else: 
             # test set
             segLabel = None
             exist = None
 
-        img = np.array(np.transpose(img, (2,0,1)), dtype=np.float32)
+        if self.transforms is not None:
+            # Called from train.py 
+            img = self.transforms(img) 
+            # TODO do i need to normalize segLabel?
+            # TODO also, does segLabel and img have to be of the same size?
+
         img = torch.Tensor(img)
         if segLabel is not None:
             segLabel = np.array(segLabel, dtype=np.float32)
@@ -77,14 +85,13 @@ class tuSimple(data.Dataset):
         exist: np.array
         img_name: str 
         '''
+
         sample = {'img' : img,
                 'segLabel': segLabel,
                 'exist': exist,
                 'img_name': self.img_list[idx]}
 
-        if self.transforms is not None:
-            # Called from train.py 
-            sample = self.transforms(sample) 
+
 
         return sample
 

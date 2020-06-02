@@ -1,7 +1,7 @@
 DEVICE: "cuda:0"
 
 DATASET:
-  PATH: "/Users/jiawei/ENet-tuSimple/dataset/tusimple/full_set"
+  PATH: "/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset"
   MEAN: [0.485, 0.456, 0.406]
   STD: [0.229, 0.224, 0.225]
   SIZE: [368,640]
