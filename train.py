@@ -54,7 +54,7 @@ class Trainer(object):
         self.val_loader = data.DataLoader(
                 dataset = self.val_dataset,
                 batch_size = 16, 
-                shuffle = True,
+                shuffle = False,
                 num_workers = 0, 
                 pin_memory = True,
                 drop_last = False,
@@ -67,8 +67,91 @@ class Trainer(object):
             lr=cfg['OPTIM']['LR'],
             weight_decay=cfg['OPTIM']['DECAY'],
         )
+        self.criterion = nn.CrossEntropyLoss().cuda() 
+    def train(self, epoch):
+        is_better = True
+        prev_loss = float('inf') 
+        print("Train Epoch: {}".format(epoch))
+        self.model.train() 
+        epoch_loss = 0
+        progressbar = tqdm(range(len(self.train_loader)))
+
+        for batch_idx, sample in enumerate(train_loader): 
+            img = sample['img'].to(self.device) 
+            segLabel = sample['segLabel'].to(self.device) 
+
+            outputs = self.model(img) 
+            loss = self.criterion(outputs, segLabel)
+
+            self.optimizer.zero_grad() 
+            loss.backward() 
+            self.optimizer.step() 
+
+            epoch_loss += loss.item() 
+            iter_idx = epoch * len(train_loader) + batch_idx
+            progressbar.set_description("Batch loss: {:.3f}".format(epoch_loss))
+            progressbar.update(1)
+
+        progressbar.close() 
+        if epoch % 1 == 0: 
+            save_dict = {
+                    "epoch": epoch,
+                    "model": self.model.state_dict(),
+                    "optim": self.optimizer.state_dict(),
+                    "best_val_loss": best_val_loss
+                    }
+           
+            save_name = os.path.join(os.cwd(), 'results', 'run.pth')
+            torch.save(save_dict, save_name) 
+            print("Model is saved: {}".format(save_name))
+            print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+    def val(epoch):
+        global best_val_loss
+
+        print("Val Epoch: {}".format(epoch))
+
+        self.model.eval()
+        val_loss = 0 
+        progressbar = tqdm(range(len(self.val_loader)))
+
+        with torch.no_grad(): 
+            for batch_idx, sample in enumerate(self.val_loader):
+                img = sample['img'].to(self.device) 
+                segLabel = sample['segLabel'].to(self.device) 
+                
+                outputs = self.model(img) 
+                loss = self.criterion(outputs, segLabel) 
+                val_loss += loss.item() 
+                progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
+                progressbar.update(1)
+        progressbar.close() 
+        iter_idx = (epoch + 1) * len(train_loader) 
+        print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+        if val_loss < best_val_loss: 
+            best_val_loss = val_loss
+            save_name = os.path.join(os.cwd(), 'results', 'run.pth') 
+            copy_name = os.path.join(os.cwd(), 'results', 'run_best.pth') 
+            shutil.copyfile(save_name, copy_name) 
+
+
+    
+            
+
+        
+    
                                           
 if __name__ == '__main__':
     t = Trainer() 
+    global best_val_loss 
+
+    start_epoch = 0 
+    for epoch in range(start_epoch, cfg['TRAIN']['MAX_EPOCHS']):
+        t.train(epoch) 
+        if epoch % 1 == 0: 
+            print("Validation") 
+            val(epoch) 
+
+
+    
 
 

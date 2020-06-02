@@ -1,7 +1,7 @@
 DEVICE: "cuda:0"
 
 DATASET:
-  PATH: "/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset"
+  PATH: "/Users/jiawei/ENet-tuSimple/dataset/tusimple/full_set"
   MEAN: [0.485, 0.456, 0.406]
   STD: [0.229, 0.224, 0.225]
   SIZE: [368,640]
@@ -17,8 +17,8 @@ MODEL:
   MOEL_NAME: "ENet"
 
 OPTIM: 
-  LR: 0.001
-  DECAY: 0.000002
+  LR: 0.01
+  DECAY: 0 
   
 
   
