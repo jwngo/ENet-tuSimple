@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import shutil
-import time
+import time 
 import torch
 import torchvision.transforms as transforms 
 import torch.nn as nn
@@ -154,6 +154,7 @@ class Trainer(object):
         self.model.eval() 
         val_loss = 0 
         progressbar = tqdm(range(len(self.val_loader))) 
+        dump_to_json = [] 
 
         with torch.no_grad():
             for batch_idx, sample in enumerate(self.val_loader): 
@@ -177,17 +178,49 @@ class Trainer(object):
                     rgb = np.stack([r,g,b], axis=2) 
                     savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
                     count += 1
-                    plt.imsave(savename, rgb) 
+                    #plt.imsave(savename, rgb) 
+                    # Generate pred.json TODO refactor in future
+                    pred_json = {} 
+                    pred_json['lanes'] = []
+                    pred_json['h_samples'] = []
+                    pred_json['raw_file'] = []
+                    pred_json['run_time'] = 0
+                    h_samples = [x for x in range(120, 360, 5)]
+                    h_sample_actual = [x for x in range(240, 720,10)]
+                    for i in range(1,5): 
+                        pred_json['lanes'].append([])
+                        ii = np.nonzero(vis == i)
+                        x, y = ii[1], ii[0]
+                        coordinates = dict()   
+                        # can use collections here to make less lines TODO
+                        
+                        for x, y in zip(x,y): 
+                            if y in h_samples:
+                                if y*2 in coordinates:
+                                    coordinates[y*2].append(int(x*2))
+                                else: 
+                                    coordinates[y*2] = [x*2]
 
-                    
-
-
-
+                        for y_actual in h_sample_actual: 
+                            if y_actual not in coordinates:
+                                pred_json['lanes'][-1].append(-2)
+                            else: 
+                                pred_json['lanes'][-1].append(int(coordinates[y_actual][len(coordinates[y_actual])//2]))
+                        
+                    pred_json['h_samples'] = h_sample_actual
+                    print(pred_json)
+                    dump_to_json.append(json.dumps(pred_json))
+        
                 loss = self.criterion(outputs, segLabel) 
                 val_loss += loss.item() 
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
         progressbar.close() 
+        with open(os.path.join(os.getcwd(), "pred_json.json"), "w") as f:
+            for line in dump_to_json:
+                print(line, end="\n", file=f)
+
+        print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "pred_json.json")))
         print("Validation loss: {}".format(val_loss))
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
                 
