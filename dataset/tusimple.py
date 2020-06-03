@@ -71,8 +71,6 @@ class tuSimple(data.Dataset):
         if self.transforms is not None:
             # Called from train.py 
             img = self.transforms(img) 
-            # TODO do i need to normalize segLabel?
-            # TODO also, does segLabel and img have to be of the same size?
 
         img = torch.Tensor(img)
         if segLabel is not None:
@@ -86,13 +84,16 @@ class tuSimple(data.Dataset):
         img_name: str 
         '''
 
-        sample = {'img' : img,
-                'segLabel': segLabel,
-                'exist': exist,
-                'img_name': self.img_list[idx]}
+        if self.image_set != 'test':
+            sample = {'img' : img,
+                    'segLabel': segLabel,
+                    'exist': exist,
+                    'img_name': self.img_list[idx]}
 
-
-
+        else: 
+            sample = {'img': img,
+                      'img_name': self.img_list[idx]
+                      }
         return sample
 
 

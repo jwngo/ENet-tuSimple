@@ -15,6 +15,7 @@ from torch.utils import data
 from tqdm import tqdm
 from PIL import Image
 from datetime import datetime
+from utils.lane_eval.tusimple_eval import LaneEval
 
 import yaml
 from dataset.tusimple import tuSimple 
@@ -37,6 +38,12 @@ class Trainer(object):
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
         self.max_epochs = cfg['TRAIN']['MAX_EPOCHS']
+        self.dataset_path = cfg['DATASET']['PATH']
+        # TODO remove this and refactor PROPERLY
+        self.input_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
+        ])
 
         input_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -150,21 +157,36 @@ class Trainer(object):
     
     def eval(self):
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
-        print("Evaluating.. (validation set)") 
+        print("Evaluating.. ") 
         self.model.eval() 
         val_loss = 0 
-        progressbar = tqdm(range(len(self.val_loader))) 
         dump_to_json = [] 
+        test_dataset = tuSimple(
+                path=self.dataset_path,
+                image_set='test',
+                transforms=self.input_transform
+                ) 
+        test_loader = data.DataLoader(
+                dataset = test_dataset,
+                batch_size = 16, 
+                shuffle = False,
+                num_workers = 0, 
+                pin_memory = True,
+                drop_last = False,
+                ) 
+
+        progressbar = tqdm(range(len(test_loader))) 
 
         with torch.no_grad():
-            for batch_idx, sample in enumerate(self.val_loader): 
+            for batch_idx, sample in enumerate(test_loader): 
                 img = sample['img'].to(self.device) 
-                segLabel = sample['segLabel'].to(self.device) 
+                img_name = sample['img_name']
+                #segLabel = sample['segLabel'].to(self.device) 
                 outputs = self.model(img) 
                 count = 0
 
                 # Visualisation 
-                for _img in outputs: 
+                for img_idx, _img in enumerate(outputs): 
                     vis = torch.argmax(_img.squeeze(), dim=0).detach().cpu().numpy() 
                     label_colors = np.array([(0,0,0), (255,255,255), (255,128,0), (255,255,0), (128,255,0)])
                     r = np.zeros_like(vis).astype(np.uint8) 
@@ -178,24 +200,27 @@ class Trainer(object):
                     rgb = np.stack([r,g,b], axis=2) 
                     savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
                     count += 1
-                    #plt.imsave(savename, rgb) 
-                    # Generate pred.json TODO refactor in future
+                    plt.imsave(savename, rgb) 
+                    # Generate pred.json TODO refactor into another file in  future
                     pred_json = {} 
                     pred_json['lanes'] = []
                     pred_json['h_samples'] = []
-                    pred_json['raw_file'] = []
+                    raw_file_name = img_name[img_idx]
+                    # truncate everything before 'clips' to be consistent with test_label.json gt
+                    pred_json['raw_file'] = raw_file_name[raw_file_name.find('clips'):]
                     pred_json['run_time'] = 0
-                    h_samples = [x for x in range(120, 360, 5)]
-                    h_sample_actual = [x for x in range(240, 720,10)]
+                    h_samples = [x for x in range(80, 360, 5)]
+                    h_sample_actual = [x for x in range(160, 720,10)]
+                    # only predicting 4 lanes
                     for i in range(1,5): 
                         pred_json['lanes'].append([])
                         ii = np.nonzero(vis == i)
                         x, y = ii[1], ii[0]
                         coordinates = dict()   
-                        # can use collections here to make less lines TODO
-                        
+                        # can use collections here to make more 'pythonic' TODO
                         for x, y in zip(x,y): 
                             if y in h_samples:
+                            # multiply by 2 since our resolution is 640x368, gt is 1280x720
                                 if y*2 in coordinates:
                                     coordinates[y*2].append(int(x*2))
                                 else: 
@@ -205,15 +230,22 @@ class Trainer(object):
                             if y_actual not in coordinates:
                                 pred_json['lanes'][-1].append(-2)
                             else: 
+                                # Take the middle of all pixels in this y_coordinate
                                 pred_json['lanes'][-1].append(int(coordinates[y_actual][len(coordinates[y_actual])//2]))
+
+                        empty = all(lane == -2 for lane in pred_json['lanes'][-1])
+                        if empty:
+                            pred_json['lanes'].pop(-1)
+                            continue
+                        
                         
                     pred_json['h_samples'] = h_sample_actual
-                    print(pred_json)
+                    #print(pred_json) 
                     dump_to_json.append(json.dumps(pred_json))
         
-                loss = self.criterion(outputs, segLabel) 
-                val_loss += loss.item() 
-                progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
+                #loss = self.criterion(outputs, segLabel) 
+                #val_loss += loss.item() 
+                #progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
         progressbar.close() 
         with open(os.path.join(os.getcwd(), "pred_json.json"), "w") as f:
@@ -223,6 +255,11 @@ class Trainer(object):
         print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "pred_json.json")))
         print("Validation loss: {}".format(val_loss))
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+        print("Evaluating with TuSimple benchmark eval..") 
+        eval_result = LaneEval.bench_one_submit(os.path.join(os.getcwd(), "pred_json.json"), "/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json")
+        print(eval_result)
+        with open(os.path.join(os.getcwd(), "evaluation_result.txt"), "w") as f: 
+            print(eval_result, file=f)
                 
 
                                           
