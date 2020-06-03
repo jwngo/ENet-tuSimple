@@ -57,11 +57,11 @@ class tuSimple(data.Dataset):
     def __getitem__(self,idx):
         img = cv2.imread(self.img_list[idx])
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (368,640), interpolation=cv2.INTER_CUBIC)
+        img = cv2.resize(img, (640,368), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
         if self.image_set != 'test': 
             segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
             # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
-            segLabel = cv2.resize(segLabel, (368,640), interpolation=cv2.INTER_NEAREST)
+            segLabel = cv2.resize(segLabel, (640,368), interpolation=cv2.INTER_NEAREST)
             exist = np.array(self.exist_list[idx])
         else: 
             # test set

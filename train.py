@@ -7,17 +7,28 @@ import torch
 import torchvision.transforms as transforms 
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+import numpy as np
+import matplotlib.pyplot as plt
 
 import torch.optim as optim
 from torch.utils import data
 from tqdm import tqdm
 from PIL import Image
+from datetime import datetime
 
 import yaml
 from dataset.tusimple import tuSimple 
 from models.enet import ENet
 
 best_val_loss = 1e6
+def parse_args():
+    parser = argparse.ArgumentParser() 
+    parser.add_argument("--resume", "-r", action="store_true")
+    parser.add_argument("--eval", action="store_true")
+    args = parser.parse_args() 
+    return args
+args = parse_args() 
+
 
 class Trainer(object): 
     def __init__(self): 
@@ -121,7 +132,6 @@ class Trainer(object):
             for batch_idx, sample in enumerate(self.val_loader):
                 img = sample['img'].to(self.device) 
                 segLabel = sample['segLabel'].to(self.device) 
-                
                 outputs = self.model(img) 
                 loss = self.criterion(outputs, segLabel) 
                 val_loss += loss.item() 
@@ -129,7 +139,7 @@ class Trainer(object):
                 progressbar.update(1)
         progressbar.close() 
         iter_idx = (epoch + 1) * len(self.train_loader) 
-        print(val_loss)
+        print("Validation loss: {}".format(val_loss)) 
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         if val_loss < best_val_loss: 
             best_val_loss = val_loss
@@ -137,23 +147,70 @@ class Trainer(object):
             copy_name = os.path.join(os.getcwd(), 'results', 'run_best.pth') 
             print("val loss is lower than best val loss! Model saved to {}".format(copy_name))
             shutil.copyfile(save_name, copy_name) 
-
-
     
-            
+    def eval(self):
+        print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+        print("Evaluating.. (validation set)") 
+        self.model.eval() 
+        val_loss = 0 
+        progressbar = tqdm(range(len(self.val_loader))) 
 
-        
-    
+        with torch.no_grad():
+            for batch_idx, sample in enumerate(self.val_loader): 
+                img = sample['img'].to(self.device) 
+                segLabel = sample['segLabel'].to(self.device) 
+                outputs = self.model(img) 
+                count = 0
+
+                # Visualisation 
+                for _img in outputs: 
+                    vis = torch.argmax(_img.squeeze(), dim=0).detach().cpu().numpy() 
+                    label_colors = np.array([(0,0,0), (255,255,255), (255,128,0), (255,255,0), (128,255,0)])
+                    r = np.zeros_like(vis).astype(np.uint8) 
+                    g = np.zeros_like(vis).astype(np.uint8) 
+                    b = np.zeros_like(vis).astype(np.uint8) 
+                    for l in range(0,5):
+                        idx = vis == l
+                        r[idx] = label_colors[l, 0]
+                        g[idx] = label_colors[l, 1]
+                        b[idx] = label_colors[l, 2]
+                    rgb = np.stack([r,g,b], axis=2) 
+                    savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
+                    count += 1
+                    plt.imsave(savename, rgb) 
+
+                    
+
+
+
+                loss = self.criterion(outputs, segLabel) 
+                val_loss += loss.item() 
+                progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
+                progressbar.update(1)
+        progressbar.close() 
+        print("Validation loss: {}".format(val_loss))
+        print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+                
+
                                           
 if __name__ == '__main__':
     t = Trainer() 
 
     start_epoch = 0 
-    for epoch in range(start_epoch, t.max_epochs):
-        t.train(epoch) 
-        if epoch % 1 == 0: 
-            print("Validation") 
-            t.val(epoch) 
+    if args.eval == False:
+        for epoch in range(start_epoch, t.max_epochs):
+            t.train(epoch) 
+            if epoch % 1 == 0: 
+                print("Validation") 
+                t.val(epoch) 
+    elif args.eval: 
+        # write validation and visualisation here
+        save_name = os.path.join(os.getcwd(), 'results', 'run_best.pth')
+        save_dict = torch.load(save_name, map_location='cpu') 
+        print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
+        t.model.load_state_dict(save_dict['model'])
+        t.model = t.model.to(t.device)             
+        t.eval() 
 
 
     
