@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 import numpy as np
 import matplotlib.pyplot as plt
+import cv2
 
 import torch.optim as optim
 from torch.utils import data
@@ -165,7 +166,7 @@ class Trainer(object):
                 # Visualisation 
                 for _img in outputs: 
                     vis = torch.argmax(_img.squeeze(), dim=0).detach().cpu().numpy() 
-                    label_colors = np.array([(0,0,0), (255,255,255), (255,128,0), (255,255,0), (128,255,0)])
+                    label_colors = np.array([(0,0,0), (254,253,252), (251,128,0), (250,249,1), (129,247,5)])
                     r = np.zeros_like(vis).astype(np.uint8) 
                     g = np.zeros_like(vis).astype(np.uint8) 
                     b = np.zeros_like(vis).astype(np.uint8) 
@@ -176,8 +177,29 @@ class Trainer(object):
                         b[idx] = label_colors[l, 2]
                     rgb = np.stack([r,g,b], axis=2) 
                     savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
+                    # refactor to function in future TODO 
+                    # need to resize seg_pred to 720,1280
+                        
+                    save_name = "{}/RESIZED_{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
+                    rgb = cv2.resize(rgb, (1280, 720), interpolation=cv2.INTER_NEAREST) 
+                    #plt.imsave(save_name, rgb) 
+                    #plt.imsave(savename, rgb) 
                     count += 1
-                    plt.imsave(savename, rgb) 
+                    h_samples = [x for x in range(240, 720, 10)] 
+                    for i in range(1, 5): 
+                        lane = [] 
+                        ii = np.nonzero(rgb == label_colors[i])
+                        x, y = ii[1], ii[0]
+                        coordinates = [(x,y) for x, y in zip(x,y) if y in h_samples]
+                        for y in h_samples:
+                            _x = []
+                            for xy in coordinates: 
+                                if xy[1] == y:
+                                    _x.append(xy)
+                            if _x: 
+                                x_coord = _x[len(_x)//2]
+                                #print(x_coord, i)
+
 
                     
 
