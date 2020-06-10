@@ -2,7 +2,7 @@ import cv2
 
 import numpy as np
 import torch
-from torchvision.transforms import Normalize as Normlize_th
+from torchvision.transforms import Normalize as Normalize_th
 
 class CustomTransform:
     def __call__(self, *args, **kwargs):
@@ -59,10 +59,9 @@ class RandomCrop(CustomTransform):
             size = size
         self.size = size 
 
-    def __call__: 
+    def __call__(self, sample): 
         img = sample.get('img')
         segLabel = sample.get('segLabel', None) 
-
         x_l_crop = np.random.randint(0, 4)
         x_r_crop = np.random.randint(0, 4)
         y_u_crop = np.random.randint(0, 4)
@@ -70,7 +69,7 @@ class RandomCrop(CustomTransform):
 
         img_crop = img[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
         print(img_crop.shape) 
-        
+
         if segLabel is not None: 
             segLabel_crop = segLabel[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
             print(segLabel_crop.shape)
@@ -79,10 +78,6 @@ class RandomCrop(CustomTransform):
         _sample['img'] = img_crop
         _sample['segLabel'] = segLabel_crop
         return _sample 
-
-
-        
-
 
 class Resize(CustomTransform):
     def __init__(self, size):
@@ -102,7 +97,7 @@ class Resize(CustomTransform):
             _sample['img'] = img
             _sample['segLabel'] = segLabel
             return _sample 
-        
+
         def reset_size(self, size): 
             if isinstance(size, int):
                 size = (size, size) 
@@ -152,7 +147,7 @@ class Rotation(CustomTransform):
 
 class Normalize(CustomTransform): 
     def __init__(self, mean, std): 
-        self.transform = Normalize_th(mean, std)
+        self.transform = Normalize_th([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
     def __call__(self, sample):
         img = sample.get('img')
@@ -171,12 +166,12 @@ class ToTensor(CustomTransform):
         img = sample.get('img') 
         segLabel = sample.get('segLabel', None) 
         exist = sample.get('exist', None) 
-        
+
         img = img.transpose(2, 0, 1)
         img = torch.from_numpy(img).type(self.dtype) / 255.
         if segLabel is not None:
             segLabel = torch.from_numpy(segLabel).type(torch.long)
-        
+
         if exist is not None:
             exist = torch.from_numpy(exist).type(torch.float32) # BCEloss requires float tensor
 

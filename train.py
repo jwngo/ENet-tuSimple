@@ -16,6 +16,7 @@ from tqdm import tqdm
 from PIL import Image
 from datetime import datetime
 from utils.lane_eval.tusimple_eval import LaneEval
+from utils.transforms import * 
 
 import yaml
 from dataset.tusimple import tuSimple 
@@ -45,31 +46,25 @@ class Trainer(object):
             transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
         ])
 
-        self.train_transform = transforms.Compose([
-            transforms.ToPILImage(),
-            transforms.RandomHorizontalFlip(p=0.4),
-            transforms.RandomRotation(degrees=(0,3)),
-            transforms.RandomResizedCrop(size=(cfg['DATASET']['SIZE']), scale=(0.97,1.0)),
-            transforms.ToTensor(),
-            transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
-            ])
-        input_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
-        ])
+        mean = cfg['DATASET']['MEAN']
+        std = cfg['DATASET']['STD']
+        self.train_transform = Compose(Resize(size=(640,368)), Rotation(2), RandomCrop(size=(640,368)), ToTensor(),
+                                       Normalize(mean=mean, std=std))
+
+        self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
         data_kwargs = {
-            'transform': input_transform, 
+            'transform': self.input_transform, 
             'size': cfg['DATASET']['SIZE'],
         } 
         self.train_dataset = tuSimple(
                 path=cfg['DATASET']['PATH'],
                 image_set='train',
-                transforms=self.input_transform
+                transforms=self.train_transform
                 ) 
         self.val_dataset = tuSimple(
                 path = cfg['DATASET']['PATH'],
                 image_set = 'val',
-                transforms =self.input_transform,
+                transforms =self.val_transform,
                 )
                 
         self.train_loader = data.DataLoader(

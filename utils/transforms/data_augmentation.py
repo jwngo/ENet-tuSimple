@@ -2,7 +2,7 @@ import random
 import numpy as np
 import cv2
 
-from utils.transforms.transforms impoprt CustomTransform
+from utils.transforms.transforms import CustomTransform
 
 class RandomFlip(CustomTransform):
     def __init__(self, prob_x=0, prob_y=0):
