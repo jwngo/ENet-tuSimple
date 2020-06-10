@@ -53,15 +53,45 @@ class Compose(CustomTransform):
             else: 
                 yield t
 
+class RandomCrop(CustomTransform):
+    def __init__(self, size):
+        if isinstance(size, (int,int)):
+            size = size
+        self.size = size 
+
+    def __call__: 
+        img = sample.get('img')
+        segLabel = sample.get('segLabel', None) 
+
+        x_l_crop = np.random.randint(0, 4)
+        x_r_crop = np.random.randint(0, 4)
+        y_u_crop = np.random.randint(0, 4)
+        y_d_crop = np.random.randint(0, 4) 
+
+        img_crop = img[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
+        print(img_crop.shape) 
+        
+        if segLabel is not None: 
+            segLabel_crop = segLabel[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
+            print(segLabel_crop.shape)
+
+        _sample = sample.copy()
+        _sample['img'] = img_crop
+        _sample['segLabel'] = segLabel_crop
+        return _sample 
+
+
+        
+
+
 class Resize(CustomTransform):
     def __init__(self, size):
-        if isinstance(size, int):
-            size = (size, size)
-            # TODO change this to W, H
+        if isinstance(size, (int,int)):
+            size = size
         self.size = size #(W,H)
 
         def __call__(self,sample): 
-            img = samlpe.get('img')
+            img = sample.get('img')
             segLabel = sample.get('segLabel', None) 
 
             img = cv2.resize(img, self.size, interppolation=cv2.INTER_CUBIC)
