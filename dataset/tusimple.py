@@ -2,9 +2,13 @@ import json
 import os
 
 import cv2
+from PIL import Image
+import random
 import numpy as np
 import torch
 from torch.utils import data
+import torchvision.transforms.functional as TF
+from torchvision import transforms
 
 class tuSimple(data.Dataset): 
     """ 
@@ -31,6 +35,40 @@ class tuSimple(data.Dataset):
 
         self.createIndex() 
 
+    def transform(self, image, mask):
+        # Images already resized by cv2 to (373, 645)
+        image = TF.to_pil_image(image)
+        mask = TF.to_pil_image(mask)
+        
+        # Random Crop
+        i, j, h, w = transforms.RandomCrop.get_params(
+            image, output_size=(368,640)) 
+        image = TF.crop(image, i, j, h, w)
+        mask = TF.crop(mask, i, j, h, w)
+
+        # Random Horizontal Flip
+        if random.random() > 0.5:
+            image = TF.hflip(image)
+            mask = TF.hflip(mask) 
+
+        # Random Rotation
+        rotation = random.randint(-3,3)
+        image = TF.rotate(image, angle=rotation)
+        mask = TF.rotate(mask, angle=rotation) 
+
+        # Transform to tensor
+        image = TF.to_tensor(image)
+        # convert mask to long tensor
+        mask = np.array(mask, dtype = np.float32)
+        mask = torch.LongTensor(mask)
+
+        # Normalize with ImageNet
+        image = TF.normalize(image, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  
+
+        return image, mask
+
+
+
     def createIndex(self): 
         """ 
         Generates img_list, segLabel_list and exist_list for tuSimple object
@@ -55,27 +93,31 @@ class tuSimple(data.Dataset):
                 self.exist_list.append([int(x) for x in l[2:]])
 
     def __getitem__(self,idx):
-        img = cv2.imread(self.img_list[idx])
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = cv2.resize(img, (640,368), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
-        if self.image_set != 'test': 
+        if self.image_set == 'train':
+            img = cv2.imread(self.img_list[idx])
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (645,373), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
+            segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
+            # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
+            segLabel = cv2.resize(segLabel, (645,373), interpolation=cv2.INTER_NEAREST)
+            exist = np.array(self.exist_list[idx])
+            img, segLabel = self.transform(img, segLabel) 
+         
+            
+        else:
+            # val and test set
+            img = cv2.imread(self.img_list[idx])
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (640,368), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
             segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
             # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
             segLabel = cv2.resize(segLabel, (640,368), interpolation=cv2.INTER_NEAREST)
             exist = np.array(self.exist_list[idx])
-        else: 
-            # test set
-            segLabel = None
-            exist = None
-
-        if self.transforms is not None:
-            # Called from train.py 
-            img = self.transforms(img) 
-
-        img = torch.Tensor(img)
-        if segLabel is not None:
-            segLabel = np.array(segLabel, dtype=np.float32)
-            segLabel = torch.LongTensor(segLabel)
+            if self.transforms is not None: 
+                img = self.transforms(img) 
+                if segLabel is not None: 
+                    segLabel = np.array(segLabel, dtype=np.float32)
+                    segLabel = torch.LongTensor(segLabel) 
 
         '''
         img: torch.Tensor

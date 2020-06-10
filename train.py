@@ -45,6 +45,14 @@ class Trainer(object):
             transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
         ])
 
+        self.train_transform = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.RandomHorizontalFlip(p=0.4),
+            transforms.RandomRotation(degrees=(0,3)),
+            transforms.RandomResizedCrop(size=(cfg['DATASET']['SIZE']), scale=(0.97,1.0)),
+            transforms.ToTensor(),
+            transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
+            ])
         input_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(cfg['DATASET']['MEAN'], cfg['DATASET']['STD']),
@@ -56,17 +64,17 @@ class Trainer(object):
         self.train_dataset = tuSimple(
                 path=cfg['DATASET']['PATH'],
                 image_set='train',
-                transforms=input_transform
+                transforms=self.input_transform
                 ) 
         self.val_dataset = tuSimple(
                 path = cfg['DATASET']['PATH'],
                 image_set = 'val',
-                transforms = input_transform,
+                transforms =self.input_transform,
                 )
                 
         self.train_loader = data.DataLoader(
                 dataset = self.train_dataset,
-                batch_size = 16,
+                batch_size = cfg['TRAIN']['BATCH_SIZE'],
                 shuffle = True,
                 num_workers = 0,
                 pin_memory = True,
@@ -74,7 +82,7 @@ class Trainer(object):
                 )
         self.val_loader = data.DataLoader(
                 dataset = self.val_dataset,
-                batch_size = 16, 
+                batch_size = cfg['TRAIN']['BATCH_SIZE'],
                 shuffle = False,
                 num_workers = 0, 
                 pin_memory = True,
@@ -82,12 +90,20 @@ class Trainer(object):
                 ) 
 
         # -------- network --------
+        weight = [0.4, 1, 1, 1, 1]
+        tensor = torch.ones((5,), dtype=torch.float32)
+        self.weights = tensor.new_tensor(weight)
         self.model = ENet(num_classes=5).to(self.device) 
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.SGD(
             self.model.parameters(),
             lr=cfg['OPTIM']['LR'],
             weight_decay=cfg['OPTIM']['DECAY'],
+            momentum=0.9,
         )
+        self.lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
+                            step_size=10,
+                            gamma=0.5,
+                            )
         self.criterion = nn.CrossEntropyLoss().cuda() 
     def train(self, epoch):
         is_better = True
@@ -106,7 +122,8 @@ class Trainer(object):
 
             self.optimizer.zero_grad() 
             loss.backward() 
-            self.optimizer.step() 
+            self.optimizer.step()
+            self.lr_scheduler.step()
 
             epoch_loss += loss.item() 
             iter_idx = epoch * len(self.train_loader) + batch_idx
@@ -119,7 +136,8 @@ class Trainer(object):
                     "epoch": epoch,
                     "model": self.model.state_dict(),
                     "optim": self.optimizer.state_dict(),
-                    "best_val_loss": best_val_loss
+                    "best_val_loss": best_val_loss,
+                    "lr_scheduler": self.lr_scheduler.state_dict(),
                     }
            
             save_name = os.path.join(os.getcwd(), 'results', 'run.pth')
@@ -168,7 +186,7 @@ class Trainer(object):
                 ) 
         test_loader = data.DataLoader(
                 dataset = test_dataset,
-                batch_size = 16, 
+                batch_size = 12, 
                 shuffle = False,
                 num_workers = 0, 
                 pin_memory = True,
