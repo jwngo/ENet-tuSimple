@@ -55,4 +55,105 @@ class Compose(CustomTransform):
 
 class Resize(CustomTransform):
     def __init__(self, size):
-        if isinstance
+        if isinstance(size, int):
+            size = (size, size)
+            # TODO change this to W, H
+        self.size = size #(W,H)
+
+        def __call__(self,sample): 
+            img = samlpe.get('img')
+            segLabel = sample.get('segLabel', None) 
+
+            img = cv2.resize(img, self.size, interppolation=cv2.INTER_CUBIC)
+            if segLabel is not None: 
+                segLabel = cv2.resize(segLabel, self.size, interpolation=cv2.INTER_NEAREST)
+
+            _sample = sample.copy() 
+            _sample['img'] = img
+            _sample['segLabel'] = segLabel
+            return _sample 
+        
+        def reset_size(self, size): 
+            if isinstance(size, int):
+                size = (size, size) 
+            self.size = size
+
+class RandomResize(Resize): 
+    """ 
+    Resize to (w, h), where w randomly samples from (minW, maxW) and h randomly samples from (minH, maxH) 
+    """
+    def __init__(self, minW, maxW, minH=None, maxH=None, batch=False): 
+        if minH is None or maxH is None:
+            minH, maxH = minW, maxW
+        super(RandomResize, self).__init__((minW, minH))
+        self.minW = minW 
+        self.maxW = maxW
+        self.minH = minH
+        self.maxH = maxH
+        self.batch = batch
+
+    def random_set_size(self): 
+        w = np.random(randint(self.minW, self.maxW+1))
+        h = np.random(randint(self.minH, self.maxH+1))
+        self.reset_size((w, h))
+
+class Rotation(CustomTransform):
+    def __init__(self, theta): 
+        self.theta = theta
+
+    def __call__(self, sample): 
+        img = sample.get('img')
+        segLabel = sample.get('segLabel', None)  
+
+        u = np.random.uniform() 
+        degree = (u-0.5) * self.theta
+        R = cv2.getRotationMatrix2D((img.shape[1]//2, img.shape[0]//2), degree, 1)
+        img = cv2.warpAffine(img, R, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+        if segLabel is not None: 
+            segLabel = cv2.warpAffine(segLabel, R, (segLabel.shape[1], segLabel.shape[0]), flags=cv2.INTER_NEAREST)
+
+        _sample = sample.copy()
+        _sample['img'] = img
+        _sample['segLabel'] = segLabel
+        return _sample
+
+    def reset_theta(self, theta):
+        self.theta = theta
+
+class Normalize(CustomTransform): 
+    def __init__(self, mean, std): 
+        self.transform = Normalize_th(mean, std)
+
+    def __call__(self, sample):
+        img = sample.get('img')
+
+        img = self.transform(img) 
+
+        _sample = sample.copy()
+        _sample['img'] = img
+        return _sample
+
+class ToTensor(CustomTransform):
+    def __init__(self, dtype=torch.float):
+        self.dtype=dtype
+
+    def __call__(self, sample): 
+        img = sample.get('img') 
+        segLabel = sample.get('segLabel', None) 
+        exist = sample.get('exist', None) 
+        
+        img = img.transpose(2, 0, 1)
+        img = torch.from_numpy(img).type(self.dtype) / 255.
+        if segLabel is not None:
+            segLabel = torch.from_numpy(segLabel).type(torch.long)
+        
+        if exist is not None:
+            exist = torch.from_numpy(exist).type(torch.float32) # BCEloss requires float tensor
+
+        _sample = sample.copy() 
+        _sample['img'] = img
+        _sample['segLabel'] = segLabel
+        _sample['exist'] = exist
+        return _sample
+
+
