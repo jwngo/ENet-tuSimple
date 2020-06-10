@@ -85,23 +85,23 @@ class Resize(CustomTransform):
             size = size
         self.size = size #(W,H)
 
-        def __call__(self,sample): 
-            img = sample.get('img')
-            segLabel = sample.get('segLabel', None) 
+    def __call__(self,sample): 
+        img = sample.get('img')
+        segLabel = sample.get('segLabel', None) 
 
-            img = cv2.resize(img, self.size, interppolation=cv2.INTER_CUBIC)
-            if segLabel is not None: 
-                segLabel = cv2.resize(segLabel, self.size, interpolation=cv2.INTER_NEAREST)
+        img = cv2.resize(img, self.size, interpolation=cv2.INTER_CUBIC)
+        if segLabel is not None: 
+            segLabel = cv2.resize(segLabel, self.size, interpolation=cv2.INTER_NEAREST)
 
-            _sample = sample.copy() 
-            _sample['img'] = img
-            _sample['segLabel'] = segLabel
-            return _sample 
+        _sample = sample.copy() 
+        _sample['img'] = img
+        _sample['segLabel'] = segLabel
+        return _sample 
 
-        def reset_size(self, size): 
-            if isinstance(size, int):
-                size = (size, size) 
-            self.size = size
+    def reset_size(self, size): 
+        if isinstance(size, int):
+            size = (size, size) 
+        self.size = size
 
 class RandomResize(Resize): 
     """ 

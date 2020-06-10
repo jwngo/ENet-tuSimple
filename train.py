@@ -48,7 +48,7 @@ class Trainer(object):
 
         mean = cfg['DATASET']['MEAN']
         std = cfg['DATASET']['STD']
-        self.train_transform = Compose(Resize(size=(640,368)), Rotation(2), RandomCrop(size=(640,368)), ToTensor(),
+        self.train_transform = Compose(Resize(size=(640,368)), Rotation(2), ToTensor(),
                                        Normalize(mean=mean, std=std))
 
         self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
@@ -89,16 +89,17 @@ class Trainer(object):
         tensor = torch.ones((5,), dtype=torch.float32)
         self.weights = tensor.new_tensor(weight)
         self.model = ENet(num_classes=5).to(self.device) 
-        self.optimizer = optim.SGD(
+        #self.optimizer = optim.SGD(
+        #    self.model.parameters(),
+        #    lr=cfg['OPTIM']['LR'],
+        #    weight_decay=cfg['OPTIM']['DECAY'],
+        #    momentum=0.9,
+        #)
+        self.optimizer = optim.Adam(
             self.model.parameters(),
-            lr=cfg['OPTIM']['LR'],
-            weight_decay=cfg['OPTIM']['DECAY'],
-            momentum=0.9,
-        )
-        self.lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer,
-                            step_size=10,
-                            gamma=0.5,
-                            )
+            lr = cfg['OPTIM']['LR'],
+            weight_decay=0,
+            )
         self.criterion = nn.CrossEntropyLoss().cuda() 
     def train(self, epoch):
         is_better = True
@@ -118,7 +119,6 @@ class Trainer(object):
             self.optimizer.zero_grad() 
             loss.backward() 
             self.optimizer.step()
-            self.lr_scheduler.step()
 
             epoch_loss += loss.item() 
             iter_idx = epoch * len(self.train_loader) + batch_idx
@@ -132,7 +132,6 @@ class Trainer(object):
                     "model": self.model.state_dict(),
                     "optim": self.optimizer.state_dict(),
                     "best_val_loss": best_val_loss,
-                    "lr_scheduler": self.lr_scheduler.state_dict(),
                     }
            
             save_name = os.path.join(os.getcwd(), 'results', 'run.pth')
@@ -177,7 +176,7 @@ class Trainer(object):
         test_dataset = tuSimple(
                 path=self.dataset_path,
                 image_set='test',
-                transforms=self.input_transform
+                transforms=self.val_transform
                 ) 
         test_loader = data.DataLoader(
                 dataset = test_dataset,

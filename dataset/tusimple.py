@@ -110,6 +110,10 @@ class tuSimple(data.Dataset):
         if self.transforms is not None:
             sample = self.transforms(sample)
 
+        if self.image_set == 'test':
+            _sample = {'img': sample['img'],
+                       'img_name': sample['img_name']}
+            return _sample
         return sample
 
 
