@@ -93,49 +93,23 @@ class tuSimple(data.Dataset):
                 self.exist_list.append([int(x) for x in l[2:]])
 
     def __getitem__(self,idx):
-        if self.image_set == 'train':
-            img = cv2.imread(self.img_list[idx])
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (645,373), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
-            segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
-            # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
-            segLabel = cv2.resize(segLabel, (645,373), interpolation=cv2.INTER_NEAREST)
-            exist = np.array(self.exist_list[idx])
-            img, segLabel = self.transform(img, segLabel) 
-         
-            
-        else:
-            # val and test set
-            img = cv2.imread(self.img_list[idx])
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (640,368), interpolation=cv2.INTER_CUBIC) # cv2 uses width height
-            segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
-            # Nearest neighbour interpolation for seglabels, other interpolation might distort labels/colours
-            segLabel = cv2.resize(segLabel, (640,368), interpolation=cv2.INTER_NEAREST)
-            exist = np.array(self.exist_list[idx])
-            if self.transforms is not None: 
-                img = self.transforms(img) 
-                if segLabel is not None: 
-                    segLabel = np.array(segLabel, dtype=np.float32)
-                    segLabel = torch.LongTensor(segLabel) 
-
-        '''
-        img: torch.Tensor
-        segLabel: torch.LongTensor
-        exist: np.array
-        img_name: str 
-        '''
-
+        img = cv2.imread(self.img_list[idx])
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         if self.image_set != 'test':
-            sample = {'img' : img,
-                    'segLabel': segLabel,
-                    'exist': exist,
-                    'img_name': self.img_list[idx]}
+            segLabel = cv2.imread(self.segLabel_list[idx])[:,:,0] # segLabel inputs separate lanes as different colours
+            exist = np.array(self.exist_list[idx])
+        else:
+            segLabel = None
+            exist = None
 
-        else: 
-            sample = {'img': img,
-                      'img_name': self.img_list[idx]
-                      }
+        sample = {'img' : img,
+                  'segLabel': segLabel,
+                  'exist': exist,
+                  'img_name': self.img_list[idx]}
+
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+
         return sample
 
 
