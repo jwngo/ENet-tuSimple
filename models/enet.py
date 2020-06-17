@@ -560,7 +560,6 @@ class ENet(nn.Module):
             64, 16, dropout_prob=0.1, relu=decoder_relu)
         self.regular5_1 = RegularBottleneck(
             16, padding=1, dropout_prob=0.1, relu=decoder_relu)
-        # TODO segmentron uses padding=2 whats the difference? 
         self.transposed_conv = nn.ConvTranspose2d(
             16,
             num_classes,

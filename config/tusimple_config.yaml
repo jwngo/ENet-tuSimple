@@ -7,7 +7,7 @@ DATASET:
   SIZE: [368,640]
 
 TRAIN:
-  MAX_EPOCHS: 100
+  MAX_EPOCHS: 50 
   BATCH_SIZE: 12
 
 TEST:
@@ -17,7 +17,7 @@ MODEL:
   MOEL_NAME: "ENet"
 
 OPTIM: 
-  LR: 0.001
+  LR: 0.01
   DECAY: 0.0001
   
 

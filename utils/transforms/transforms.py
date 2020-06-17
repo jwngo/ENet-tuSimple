@@ -54,25 +54,36 @@ class Compose(CustomTransform):
                 yield t
 
 class RandomCrop(CustomTransform):
+    """Random crop the image & target
+
+    Args:
+        size: Expected size after cropping, (w,h)
+    Notes: 
+        - If the image is smaller than the crop size, returns the original image
+    """
     def __init__(self, size):
-        if isinstance(size, (int,int)):
-            size = size
-        self.size = size 
+        crop_size = size
+        self.crop_size = crop_size 
 
     def __call__(self, sample): 
         img = sample.get('img')
+        if img.shape[0] < self.crop_size[1] or img.shape[1] < self.crop_size[0]:
+            print("Input image is smaller than expected output size!") 
+            return sample 
         segLabel = sample.get('segLabel', None) 
-        x_l_crop = np.random.randint(0, 4)
-        x_r_crop = np.random.randint(0, 4)
-        y_u_crop = np.random.randint(0, 4)
-        y_d_crop = np.random.randint(0, 4) 
+        margin_h = max(img.shape[1] - self.crop_size[0], 0) # img is (h,w) crop_size is (w,h)
+        margin_w = max(img.shape[0] - self.crop_size[1], 0)
+        offset_h = np.random.randint(0, margin_h + 1)
+        offset_w = np.random.randint(0, margin_w + 1)
+        crop_y1, crop_y2 = offset_h, offset_h + self.crop_size[1]
+        crop_x1, crop_x2 = offset_w, offset_w + self.crop_size[0]
 
-        img_crop = img[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
-        print(img_crop.shape) 
+        # crop the image
+        img_crop = img[crop_y1:crop_y2, crop_x1:crop_x2, ...]
 
+        # crop the target
         if segLabel is not None: 
-            segLabel_crop = segLabel[0+y_d_crop:img.shape[0]-y_u_crop, 0+x_l_crop:img.shape[1]-x_r_crop]
-            print(segLabel_crop.shape)
+            segLabel_crop = segLabel[crop_y1:crop_y2, crop_x1:crop_x2, ...]
 
         _sample = sample.copy()
         _sample['img'] = img_crop
@@ -81,8 +92,6 @@ class RandomCrop(CustomTransform):
 
 class Resize(CustomTransform):
     def __init__(self, size):
-        if isinstance(size, (int,int)):
-            size = size
         self.size = size #(W,H)
 
     def __call__(self,sample): 

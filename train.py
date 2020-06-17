@@ -48,8 +48,7 @@ class Trainer(object):
 
         mean = cfg['DATASET']['MEAN']
         std = cfg['DATASET']['STD']
-        self.train_transform = Compose(Resize(size=(640,368)), Rotation(2), ToTensor(),
-                                       Normalize(mean=mean, std=std))
+        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
         self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
         data_kwargs = {
@@ -89,18 +88,19 @@ class Trainer(object):
         tensor = torch.ones((5,), dtype=torch.float32)
         self.weights = tensor.new_tensor(weight)
         self.model = ENet(num_classes=5).to(self.device) 
-        #self.optimizer = optim.SGD(
-        #    self.model.parameters(),
-        #    lr=cfg['OPTIM']['LR'],
-        #    weight_decay=cfg['OPTIM']['DECAY'],
-        #    momentum=0.9,
-        #)
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.SGD(
             self.model.parameters(),
-            lr = cfg['OPTIM']['LR'],
-            weight_decay=0,
-            )
-        self.criterion = nn.CrossEntropyLoss().cuda() 
+            lr=cfg['OPTIM']['LR'],
+            weight_decay=cfg['OPTIM']['DECAY'],
+            momentum=0.9,
+        )
+        #self.lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1200, gamma=0.8,)
+        #self.optimizer = optim.Adam(
+        #    self.model.parameters(),
+        #    lr = cfg['OPTIM']['LR'],
+        #    weight_decay=0,
+        #    )
+        self.criterion = nn.CrossEntropyLoss(weight=self.weights).cuda() 
     def train(self, epoch):
         is_better = True
         prev_loss = float('inf') 
@@ -119,6 +119,7 @@ class Trainer(object):
             self.optimizer.zero_grad() 
             loss.backward() 
             self.optimizer.step()
+            #self.lr_scheduler.step()
 
             epoch_loss += loss.item() 
             iter_idx = epoch * len(self.train_loader) + batch_idx
@@ -212,12 +213,24 @@ class Trainer(object):
                     rgb = np.stack([r,g,b], axis=2) 
                     savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
                     count += 1
-                    plt.imsave(savename, rgb) 
+                    raw_file_name = img_name[img_idx]
+                    raw_img = img[img_idx].cpu().detach().numpy()
+                    raw_img = raw_img.transpose(1, 2, 0)
+                    # Normalize both to 0..1
+                    min_val, max_val = np.min(raw_img), np.max(raw_img)
+                    raw_img = (raw_img - min_val) / (max_val - min_val)
+                    #rgb = rgb / 255.
+                    #stack = np.hstack((raw_img, rgb))
+                    background = Image.fromarray(np.uint8(raw_img*255))
+                    overlay = Image.fromarray(rgb)
+                    new_img = Image.blend(background, overlay, 0.4)
+                    new_img.save(savename, "PNG")
+                    
+                    #plt.imsave(savename, stack) 
                     # Generate pred.json TODO refactor into another file in  future
                     pred_json = {} 
                     pred_json['lanes'] = []
                     pred_json['h_samples'] = []
-                    raw_file_name = img_name[img_idx]
                     # truncate everything before 'clips' to be consistent with test_label.json gt
                     pred_json['raw_file'] = raw_file_name[raw_file_name.find('clips'):]
                     pred_json['run_time'] = 0
