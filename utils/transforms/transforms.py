@@ -53,6 +53,49 @@ class Compose(CustomTransform):
             else: 
                 yield t
 
+class RandomFlip(CustomTransform): 
+    """ 
+    Flip the image & target 
+    based on a probability
+    """
+    def __init__(self, prob, direction='horizontal'): 
+        self.prob = prob
+        self.direction = direction
+        if prob is not None: 
+            assert prob >= 0 and prob <= 1
+        assert direction in ['horizontal', 'vertical']
+
+    def __call__(self, sample): 
+        flip = True if np.random.rand() > self.prob else False
+        flip_direction = self.direction 
+        if flip: 
+            img = sample.get('img') 
+            segLabel = sample.get('segLabel', None) 
+            if direction == 'horizontal':
+                img_flip = np.flip(img, axis=1) 
+                if segLabel is not None: 
+                    segLabel_flip = np.flip(segLabel, axis=1) 
+            elif direction == 'vertical': 
+                img_flip = np.flip(img, axis=0) 
+                if segLabel is not None: 
+                    segLabel_flip = np.flip(segLabel, axis=0) 
+            _sample = sample.copy()
+            _sample['img'] = img_flip
+            if segLabel_flip is not None: 
+                _sample['segLabel'] = segLabel_flip
+            return _sample 
+
+        elif !flip: 
+            return sample 
+
+
+        
+            
+        
+
+
+
+
 class RandomCrop(CustomTransform):
     """Random crop the image & target
 
