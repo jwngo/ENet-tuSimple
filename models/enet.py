@@ -567,6 +567,14 @@ class ENet(nn.Module):
             stride=2,
             padding=1,
             bias=False)
+        
+        self.transposed_conv_sem = nn.ConvTranspose2d(
+            16,
+            out_channels,
+            kernel_size=3,
+            stride=2,
+            padding=1,
+            bias=False)
 
     def forward(self, x):
         # Initial block
@@ -593,24 +601,46 @@ class ENet(nn.Module):
         x = self.asymmetric2_7(x)
         x = self.dilated2_8(x)
 
+        # 5 Channel Output 
         # Stage 3 - Encoder
-        x = self.regular3_0(x)
-        x = self.dilated3_1(x)
-        x = self.asymmetric3_2(x)
-        x = self.dilated3_3(x)
-        x = self.regular3_4(x)
-        x = self.dilated3_5(x)
-        x = self.asymmetric3_6(x)
-        x = self.dilated3_7(x)
+        x1 = self.regular3_0(x)
+        x1 = self.dilated3_1(x1)
+        x1 = self.asymmetric3_2(x1)
+        x1 = self.dilated3_3(x1)
+        x1 = self.regular3_4(x1)
+        x1 = self.dilated3_5(x1)
+        x1 = self.asymmetric3_6(x1)
+        x1 = self.dilated3_7(x1)
 
         # Stage 4 - Decoder
-        x = self.upsample4_0(x, max_indices2_0, output_size=stage2_input_size)
-        x = self.regular4_1(x)
-        x = self.regular4_2(x)
+        x1 = self.upsample4_0(x1, max_indices2_0, output_size=stage2_input_size)
+        x1 = self.regular4_1(x1)
+        x1 = self.regular4_2(x1)
 
         # Stage 5 - Decoder
-        x = self.upsample5_0(x, max_indices1_0, output_size=stage1_input_size)
-        x = self.regular5_1(x)
-        x = self.transposed_conv(x, output_size=input_size)
+        x1 = self.upsample5_0(x1, max_indices1_0, output_size=stage1_input_size)
+        x1 = self.regular5_1(x1)
+        ins = self.transposed_conv(x1, output_size=input_size)
 
-        return x
+        # Binary Output
+        # Stage 3 - Encoder
+        x2 = self.regular3_0(x)
+        x2 = self.dilated3_1(x2)
+        x2 = self.asymmetric3_2(x2)
+        x2 = self.dilated3_3(x2)
+        x2 = self.regular3_4(x2)
+        x2 = self.dilated3_5(x2)
+        x2 = self.asymmetric3_6(x2)
+        x2 = self.dilated3_7(x2)
+
+        # Stage 4 - Decoder
+        x2 = self.upsample4_0(x2, max_indices2_0, output_size=stage2_input_size)
+        x2 = self.regular4_1(x2)
+        x2 = self.regular4_2(x2)
+
+        # Stage 5 - Decoder
+        x2 = self.upsample5_0(x2, max_indices1_0, output_size=stage1_input_size)
+        x2 = self.regular5_1(x2)
+        sem = self.transposed_conv_sem(x2, output_size=input_size)
+
+        return sem, ins 

@@ -101,6 +101,7 @@ class Trainer(object):
         #    weight_decay=0,
         #    )
         self.criterion = nn.CrossEntropyLoss(weight=self.weights).cuda() 
+        self.bce = nn.BCELoss().cuda()
     def train(self, epoch):
         is_better = True
         prev_loss = float('inf') 
@@ -113,7 +114,9 @@ class Trainer(object):
             img = sample['img'].to(self.device) 
             segLabel = sample['segLabel'].to(self.device) 
 
-            outputs = self.model(img) 
+            sem_pred, ins_pred = self.model(img) 
+            crossentropy = self.criterion(ins_pred, segLabel) 
+            bce = self.bce(sem_pred, segLabel) # TODO BINARY LABEL
             loss = self.criterion(outputs, segLabel)
 
             self.optimizer.zero_grad() 
