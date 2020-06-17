@@ -17,6 +17,7 @@ from PIL import Image
 from datetime import datetime
 from utils.lane_eval.tusimple_eval import LaneEval
 from utils.transforms import * 
+from torch.utils.tensorboard import SummaryWriter
 
 import yaml
 from dataset.tusimple import tuSimple 
@@ -35,6 +36,7 @@ args = parse_args()
 class Trainer(object): 
     def __init__(self): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
+        self.writer = SummaryWriter('tensorboard/adam0') 
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
@@ -48,7 +50,7 @@ class Trainer(object):
 
         mean = cfg['DATASET']['MEAN']
         std = cfg['DATASET']['STD']
-        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
+        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), RandomFlip(0.5), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
         self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
         data_kwargs = {
@@ -88,20 +90,20 @@ class Trainer(object):
         tensor = torch.ones((5,), dtype=torch.float32)
         self.weights = tensor.new_tensor(weight)
         self.model = ENet(num_classes=5).to(self.device) 
-        self.optimizer = optim.SGD(
-            self.model.parameters(),
-            lr=cfg['OPTIM']['LR'],
-            weight_decay=cfg['OPTIM']['DECAY'],
-            momentum=0.9,
-        )
-        #self.lr_scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=1200, gamma=0.8,)
-        #self.optimizer = optim.Adam(
+        #self.optimizer = optim.SGD(
         #    self.model.parameters(),
-        #    lr = cfg['OPTIM']['LR'],
-        #    weight_decay=0,
-        #    )
-        self.criterion = nn.CrossEntropyLoss(weight=self.weights).cuda() 
+        #    lr=cfg['OPTIM']['LR'],
+        #    weight_decay=cfg['OPTIM']['DECAY'],
+        #    momentum=0.9,
+        #)
+        self.optimizer = optim.Adam(
+            self.model.parameters(),
+            lr = cfg['OPTIM']['LR'],
+            weight_decay=0,
+            )
+        self.criterion = nn.CrossEntropyLoss().cuda() 
     def train(self, epoch):
+        running_loss = 0.0
         is_better = True
         prev_loss = float('inf') 
         print("Train Epoch: {}".format(epoch))
@@ -119,12 +121,22 @@ class Trainer(object):
             self.optimizer.zero_grad() 
             loss.backward() 
             self.optimizer.step()
-            #self.lr_scheduler.step()
 
             epoch_loss += loss.item() 
+            running_loss += loss.item() 
             iter_idx = epoch * len(self.train_loader) + batch_idx
             progressbar.set_description("Batch loss: {:.3f}".format(loss.item()))
             progressbar.update(1)
+            
+            # Tensorboard
+            if batch_idx % 10 == 9: 
+                self.writer.add_scalar('train loss',
+                                running_loss / 10,
+                                epoch * len(self.train_loader) + batch_idx + 1)
+                running_loss = 0.0
+        return epoch_loss
+            
+
 
         progressbar.close() 
         if epoch % 1 == 0: 
@@ -139,9 +151,8 @@ class Trainer(object):
             torch.save(save_dict, save_name) 
             print("Model is saved: {}".format(save_name))
             print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
-    def val(self, epoch):
+    def val(self, epoch, train_loss):
         global best_val_loss
-
         print("Val Epoch: {}".format(epoch))
 
         self.model.eval()
@@ -154,9 +165,16 @@ class Trainer(object):
                 segLabel = sample['segLabel'].to(self.device) 
                 outputs = self.model(img) 
                 loss = self.criterion(outputs, segLabel) 
-                val_loss += loss.item() 
+                epoch_val_loss += loss.item() 
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
+
+                # Tensorboard
+                if batch_idx + 1 == len(self.val_loader):
+                    self.writer.add_scalar('train - val loss',
+                                    train_loss - (epoch_val_loss / len(self.val_loader)),
+                                    epoch)
+
         progressbar.close() 
         iter_idx = (epoch + 1) * len(self.train_loader) 
         print("Validation loss: {}".format(val_loss)) 
@@ -294,10 +312,10 @@ if __name__ == '__main__':
     start_epoch = 0 
     if args.eval == False:
         for epoch in range(start_epoch, t.max_epochs):
-            t.train(epoch) 
+            epoch_train_loss = t.train(epoch) 
             if epoch % 1 == 0: 
                 print("Validation") 
-                t.val(epoch) 
+                t.val(epoch, epoch_train_loss) 
     elif args.eval: 
         # write validation and visualisation here
         save_name = os.path.join(os.getcwd(), 'results', 'run_best.pth')

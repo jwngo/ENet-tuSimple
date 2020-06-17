@@ -85,16 +85,8 @@ class RandomFlip(CustomTransform):
                 _sample['segLabel'] = segLabel_flip
             return _sample 
 
-        elif !flip: 
+        elif not flip: 
             return sample 
-
-
-        
-            
-        
-
-
-
 
 class RandomCrop(CustomTransform):
     """Random crop the image & target

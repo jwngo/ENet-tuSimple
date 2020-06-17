@@ -17,7 +17,7 @@ MODEL:
   MOEL_NAME: "ENet"
 
 OPTIM: 
-  LR: 0.01
+  LR: 0.001
   DECAY: 0.0001
   
 
