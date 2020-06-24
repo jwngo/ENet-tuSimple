@@ -36,7 +36,7 @@ args = parse_args()
 class Trainer(object): 
     def __init__(self): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
-        self.writer = SummaryWriter('tensorboard/adam0') 
+        self.writer = SummaryWriter('tensorboard/sgd3_300') 
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
@@ -50,7 +50,7 @@ class Trainer(object):
 
         mean = cfg['DATASET']['MEAN']
         std = cfg['DATASET']['STD']
-        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), RandomFlip(0.5), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
+        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
         self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
         data_kwargs = {
@@ -90,17 +90,17 @@ class Trainer(object):
         tensor = torch.ones((5,), dtype=torch.float32)
         self.weights = tensor.new_tensor(weight)
         self.model = ENet(num_classes=5).to(self.device) 
-        #self.optimizer = optim.SGD(
-        #    self.model.parameters(),
-        #    lr=cfg['OPTIM']['LR'],
-        #    weight_decay=cfg['OPTIM']['DECAY'],
-        #    momentum=0.9,
-        #)
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.SGD(
             self.model.parameters(),
-            lr = cfg['OPTIM']['LR'],
-            weight_decay=0,
-            )
+            lr=cfg['OPTIM']['LR'],
+            weight_decay=cfg['OPTIM']['DECAY'],
+            momentum=0.9,
+        )
+        #self.optimizer = optim.Adam(
+        #    self.model.parameters(),
+        #    lr = cfg['OPTIM']['LR'],
+        #    weight_decay=0,
+        #    )
         self.criterion = nn.CrossEntropyLoss().cuda() 
     def train(self, epoch):
         running_loss = 0.0
@@ -134,10 +134,7 @@ class Trainer(object):
                                 running_loss / 10,
                                 epoch * len(self.train_loader) + batch_idx + 1)
                 running_loss = 0.0
-        return epoch_loss
             
-
-
         progressbar.close() 
         if epoch % 1 == 0: 
             save_dict = {
@@ -151,6 +148,7 @@ class Trainer(object):
             torch.save(save_dict, save_name) 
             print("Model is saved: {}".format(save_name))
             print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+        return epoch_loss/len(self.train_loader)
     def val(self, epoch, train_loss):
         global best_val_loss
         print("Val Epoch: {}".format(epoch))
@@ -165,14 +163,14 @@ class Trainer(object):
                 segLabel = sample['segLabel'].to(self.device) 
                 outputs = self.model(img) 
                 loss = self.criterion(outputs, segLabel) 
-                epoch_val_loss += loss.item() 
+                val_loss += loss.item() 
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
 
                 # Tensorboard
                 if batch_idx + 1 == len(self.val_loader):
                     self.writer.add_scalar('train - val loss',
-                                    train_loss - (epoch_val_loss / len(self.val_loader)),
+                                    train_loss - (val_loss / len(self.val_loader)),
                                     epoch)
 
         progressbar.close() 
@@ -215,6 +213,9 @@ class Trainer(object):
                 #segLabel = sample['segLabel'].to(self.device) 
                 outputs = self.model(img) 
                 count = 0
+                print(type(outputs))
+                print(outputs.shape)
+
 
                 # Visualisation 
                 for img_idx, _img in enumerate(outputs): 
@@ -232,6 +233,7 @@ class Trainer(object):
                     savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
                     count += 1
                     raw_file_name = img_name[img_idx]
+                    '''
                     raw_img = img[img_idx].cpu().detach().numpy()
                     raw_img = raw_img.transpose(1, 2, 0)
                     # Normalize both to 0..1
@@ -243,6 +245,7 @@ class Trainer(object):
                     overlay = Image.fromarray(rgb)
                     new_img = Image.blend(background, overlay, 0.4)
                     new_img.save(savename, "PNG")
+                    '''
                     
                     #plt.imsave(savename, stack) 
                     # Generate pred.json TODO refactor into another file in  future
@@ -317,7 +320,6 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        # write validation and visualisation here
         save_name = os.path.join(os.getcwd(), 'results', 'run_best.pth')
         save_dict = torch.load(save_name, map_location='cpu') 
         print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
