@@ -28,7 +28,7 @@ class InitialBlock(nn.Module):
                  in_channels,
                  out_channels,
                  bias=False,
-                 relu=True):
+                 relu=False):
         super().__init__()
 
         if relu:
@@ -48,10 +48,10 @@ class InitialBlock(nn.Module):
             bias=bias)
 
         # Extension branch
-        self.ext_branch = nn.MaxPool2d(3, stride=2, padding=1)
+        self.ext_branch = nn.MaxPool2d(kernel=2, stride=2, padding=0)
 
         # Initialize batch normalization to be used after concatenation
-        self.batch_norm = nn.BatchNorm2d(out_channels)
+        self.batch_norm = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.1)
 
         # PReLU layer to apply after concatenating the branches
         self.out_activation = activation()
@@ -143,7 +143,7 @@ class RegularBottleneck(nn.Module):
                 internal_channels,
                 kernel_size=1,
                 stride=1,
-                bias=bias), nn.BatchNorm2d(internal_channels), activation())
+                bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001, momentum=0.1), activation())
 
         # If the convolution is asymmetric we split the main convolution in
         # two. Eg. for a 5x5 asymmetric convolution we have two convolution:
@@ -157,7 +157,7 @@ class RegularBottleneck(nn.Module):
                     stride=1,
                     padding=(padding, 0),
                     dilation=dilation,
-                    bias=bias), nn.BatchNorm2d(internal_channels), activation(),
+                    bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001, momentum=0.1), activation(),
                 nn.Conv2d(
                     internal_channels,
                     internal_channels,
@@ -165,7 +165,7 @@ class RegularBottleneck(nn.Module):
                     stride=1,
                     padding=(0, padding),
                     dilation=dilation,
-                    bias=bias), nn.BatchNorm2d(internal_channels), activation())
+                    bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001, momentum=0.1), activation())
         else:
             self.ext_conv2 = nn.Sequential(
                 nn.Conv2d(
@@ -175,7 +175,7 @@ class RegularBottleneck(nn.Module):
                     stride=1,
                     padding=padding,
                     dilation=dilation,
-                    bias=bias), nn.BatchNorm2d(internal_channels), activation())
+                    bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001, momentum=0.1), activation())
 
         # 1x1 expansion convolution
         self.ext_conv3 = nn.Sequential(
@@ -184,7 +184,7 @@ class RegularBottleneck(nn.Module):
                 channels,
                 kernel_size=1,
                 stride=1,
-                bias=bias), nn.BatchNorm2d(channels), activation())
+                bias=bias), nn.BatchNorm2d(channels, eps=0.001, momentum=0.1), activation())
 
         self.ext_regul = nn.Dropout2d(p=dropout_prob)
 
@@ -466,7 +466,6 @@ class ENet(nn.Module):
     def __init__(self, num_classes, encoder_relu=False, decoder_relu=True):
         super().__init__()
         # InitialBlock(in_channels, out_channels, bias=False, relu=encoder_relu)
-        # TODO change the number of in_channels here so since we are passing in 5 (?)
         self.initial_block = InitialBlock(3, 16, relu=encoder_relu)
 
         # Stage 1 - Encoder

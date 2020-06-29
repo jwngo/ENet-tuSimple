@@ -32,7 +32,6 @@ def parse_args():
     return args
 args = parse_args() 
 
-
 class Trainer(object): 
     def __init__(self): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
@@ -67,7 +66,6 @@ class Trainer(object):
                 image_set = 'val',
                 transforms =self.val_transform,
                 )
-                
         self.train_loader = data.DataLoader(
                 dataset = self.train_dataset,
                 batch_size = cfg['TRAIN']['BATCH_SIZE'],
@@ -84,7 +82,6 @@ class Trainer(object):
                 pin_memory = True,
                 drop_last = False,
                 ) 
-
         # -------- network --------
         weight = [0.4, 1, 1, 1, 1]
         tensor = torch.ones((5,), dtype=torch.float32)
@@ -110,7 +107,6 @@ class Trainer(object):
         self.model.train() 
         epoch_loss = 0
         progressbar = tqdm(range(len(self.train_loader)))
-
         for batch_idx, sample in enumerate(self.train_loader): 
             img = sample['img'].to(self.device) 
             segLabel = sample['segLabel'].to(self.device) 
@@ -127,14 +123,12 @@ class Trainer(object):
             iter_idx = epoch * len(self.train_loader) + batch_idx
             progressbar.set_description("Batch loss: {:.3f}".format(loss.item()))
             progressbar.update(1)
-            
             # Tensorboard
             if batch_idx % 10 == 9: 
                 self.writer.add_scalar('train loss',
                                 running_loss / 10,
                                 epoch * len(self.train_loader) + batch_idx + 1)
                 running_loss = 0.0
-            
         progressbar.close() 
         if epoch % 1 == 0: 
             save_dict = {
@@ -143,7 +137,6 @@ class Trainer(object):
                     "optim": self.optimizer.state_dict(),
                     "best_val_loss": best_val_loss,
                     }
-           
             save_name = os.path.join(os.getcwd(), 'results', 'run.pth')
             torch.save(save_dict, save_name) 
             print("Model is saved: {}".format(save_name))
@@ -152,11 +145,9 @@ class Trainer(object):
     def val(self, epoch, train_loss):
         global best_val_loss
         print("Val Epoch: {}".format(epoch))
-
         self.model.eval()
         val_loss = 0 
         progressbar = tqdm(range(len(self.val_loader)))
-
         with torch.no_grad(): 
             for batch_idx, sample in enumerate(self.val_loader):
                 img = sample['img'].to(self.device) 
@@ -166,13 +157,11 @@ class Trainer(object):
                 val_loss += loss.item() 
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
-
                 # Tensorboard
                 if batch_idx + 1 == len(self.val_loader):
                     self.writer.add_scalar('train - val loss',
                                     train_loss - (val_loss / len(self.val_loader)),
                                     epoch)
-
         progressbar.close() 
         iter_idx = (epoch + 1) * len(self.train_loader) 
         print("Validation loss: {}".format(val_loss)) 
@@ -203,9 +192,7 @@ class Trainer(object):
                 pin_memory = True,
                 drop_last = False,
                 ) 
-
         progressbar = tqdm(range(len(test_loader))) 
-
         with torch.no_grad():
             for batch_idx, sample in enumerate(test_loader): 
                 img = sample['img'].to(self.device) 
@@ -213,10 +200,6 @@ class Trainer(object):
                 #segLabel = sample['segLabel'].to(self.device) 
                 outputs = self.model(img) 
                 count = 0
-                print(type(outputs))
-                print(outputs.shape)
-
-
                 # Visualisation 
                 for img_idx, _img in enumerate(outputs): 
                     vis = torch.argmax(_img.squeeze(), dim=0).detach().cpu().numpy() 
@@ -246,8 +229,6 @@ class Trainer(object):
                     new_img = Image.blend(background, overlay, 0.4)
                     new_img.save(savename, "PNG")
                     '''
-                    
-                    #plt.imsave(savename, stack) 
                     # Generate pred.json TODO refactor into another file in  future
                     pred_json = {} 
                     pred_json['lanes'] = []
@@ -283,12 +264,9 @@ class Trainer(object):
                         if empty:
                             pred_json['lanes'].pop(-1)
                             continue
-                        
-                        
                     pred_json['h_samples'] = h_sample_actual
                     #print(pred_json) 
                     dump_to_json.append(json.dumps(pred_json))
-        
                 #loss = self.criterion(outputs, segLabel) 
                 #val_loss += loss.item() 
                 #progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
@@ -307,8 +285,6 @@ class Trainer(object):
         with open(os.path.join(os.getcwd(), "evaluation_result.txt"), "w") as f: 
             print(eval_result, file=f)
                 
-
-                                          
 if __name__ == '__main__':
     t = Trainer() 
 
@@ -326,8 +302,3 @@ if __name__ == '__main__':
         t.model.load_state_dict(save_dict['model'])
         t.model = t.model.to(t.device)             
         t.eval() 
-
-
-    
-
-
