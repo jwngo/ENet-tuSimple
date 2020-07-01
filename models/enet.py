@@ -2,6 +2,12 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
+class View(nn.Module):
+    def __init__(self):
+        super(View, self).__init__()
+
+    def forward(self, x):
+        return x.view(-1)
 
 class InitialBlock(nn.Module):
     """The initial block is composed of two branches:
@@ -157,7 +163,8 @@ class RegularBottleneck(nn.Module):
                     stride=1,
                     padding=(padding, 0),
                     dilation=dilation,
-                    bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001, momentum=0.1), activation(),
+                    bias=bias))
+                # No activation, no batch norm here 
                 nn.Conv2d(
                     internal_channels,
                     internal_channels,
@@ -184,7 +191,8 @@ class RegularBottleneck(nn.Module):
                 channels,
                 kernel_size=1,
                 stride=1,
-                bias=bias), nn.BatchNorm2d(channels, eps=0.001, momentum=0.1), activation())
+                bias=bias), nn.BatchNorm2d(channels, eps=0.001, momentum=0.1))
+            # removed PReLU here
 
         self.ext_regul = nn.Dropout2d(p=dropout_prob)
 
@@ -280,7 +288,7 @@ class DownsamplingBottleneck(nn.Module):
                 internal_channels,
                 kernel_size=2,
                 stride=2,
-                bias=bias), nn.BatchNorm2d(internal_channels), activation())
+                bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001), activation())
 
         # Convolution
         self.ext_conv2 = nn.Sequential(
@@ -290,7 +298,7 @@ class DownsamplingBottleneck(nn.Module):
                 kernel_size=3,
                 stride=1,
                 padding=1,
-                bias=bias), nn.BatchNorm2d(internal_channels), activation())
+                bias=bias), nn.BatchNorm2d(internal_channels, eps=0.001), activation())
 
         # 1x1 expansion convolution
         self.ext_conv3 = nn.Sequential(
@@ -299,8 +307,8 @@ class DownsamplingBottleneck(nn.Module):
                 out_channels,
                 kernel_size=1,
                 stride=1,
-                bias=bias), nn.BatchNorm2d(out_channels), activation())
-
+                bias=bias), nn.BatchNorm2d(out_channels, eps=0.001))
+        # cardwing implementation no PReLU after conv3's batchnorm
         self.ext_regul = nn.Dropout2d(p=dropout_prob)
 
         # PReLU layer to apply after concatenating the branches
@@ -394,11 +402,21 @@ class UpsamplingBottleneck(nn.Module):
         # Main branch - max pooling followed by feature map (channels) padding
         self.main_conv1 = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=bias),
-            nn.BatchNorm2d(out_channels))
-
+            nn.BatchNorm2d(out_channels, eps=0.001))
+        
+        self.main_bilinear1 = nn.UpsamplingBilinear2d(scale_factor=2) 
+        self.main_conv2 = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=1, bias=bias),
+                nn.BatchNorm2d(out_channels, eps=1e-5))
+        self.main_conv3 = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=bias),
+                nn.BatchNorm2d(out_channels, eps=1e-5))
+        self.main_conv4 = nn.Sequential(
+                nn.Conv2d(out_channels, out_channels, kernel_size=1, bias=bias),
+                nn.BatchNorm2d(out_channels, eps=1e-5))
         # Remember that the stride is the same as the kernel_size, just like
         # the max pooling layers
-        self.main_unpool1 = nn.MaxUnpool2d(kernel_size=2)
+        #self.main_unpool1 = nn.MaxUnpool2d(kernel_size=2)
 
         # Extension branch - 1x1 convolution, followed by a regular, dilated or
         # asymmetric convolution, followed by another 1x1 convolution. Number
@@ -408,7 +426,7 @@ class UpsamplingBottleneck(nn.Module):
         self.ext_conv1 = nn.Sequential(
             nn.Conv2d(
                 in_channels, internal_channels, kernel_size=1, bias=bias),
-            nn.BatchNorm2d(internal_channels), activation())
+            nn.BatchNorm2d(internal_channels, eps=0.001), activation())
 
         # Transposed convolution
         self.ext_tconv1 = nn.ConvTranspose2d(
@@ -417,14 +435,14 @@ class UpsamplingBottleneck(nn.Module):
             kernel_size=2,
             stride=2,
             bias=bias)
-        self.ext_tconv1_bnorm = nn.BatchNorm2d(internal_channels)
+        self.ext_tconv1_bnorm = nn.BatchNorm2d(internal_channels, eps=0.001)
         self.ext_tconv1_activation = activation()
 
         # 1x1 expansion convolution
         self.ext_conv2 = nn.Sequential(
             nn.Conv2d(
                 internal_channels, out_channels, kernel_size=1, bias=bias),
-            nn.BatchNorm2d(out_channels), activation())
+            nn.BatchNorm2d(out_channels, eps=0.001), activation())
 
         self.ext_regul = nn.Dropout2d(p=dropout_prob)
 
@@ -434,8 +452,12 @@ class UpsamplingBottleneck(nn.Module):
     def forward(self, x, max_indices, output_size):
         # Main branch shortcut
         main = self.main_conv1(x)
-        main = self.main_unpool1(
-            main, max_indices, output_size=output_size)
+        #main = self.main_unpool1(
+        #    main, max_indices, output_size=output_size)
+        main = self.main_bilinear1(main)
+        main = self.main_conv2(main)
+        main = self.main_conv3(main) 
+        main = self.main_conv4(main) 
 
         # Extension branch
         ext = self.ext_conv1(x)
@@ -503,7 +525,7 @@ class ENet(nn.Module):
             dropout_prob=0.1,
             relu=encoder_relu)
         self.dilated2_4 = RegularBottleneck(
-            128, dilation=4, padding=4, dropout_prob=0.1, relu=encoder_relu)
+            128, dilation=4, kernel_size=3, padding=4, dropout_prob=0.1, relu=encoder_relu)
         self.regular2_5 = RegularBottleneck(
             128, padding=1, dropout_prob=0.1, relu=encoder_relu)
         self.dilated2_6 = RegularBottleneck(
@@ -548,24 +570,45 @@ class ENet(nn.Module):
 
         # Stage 4 - Decoder
         self.upsample4_0 = UpsamplingBottleneck(
-            128, 64, dropout_prob=0.1, relu=decoder_relu)
+            128, 64, dropout_prob=0.1, relu=encoder_relu)
         self.regular4_1 = RegularBottleneck(
-            64, padding=1, dropout_prob=0.1, relu=decoder_relu)
+            64, padding=1, dropout_prob=0.1, relu=encoder_relu)
         self.regular4_2 = RegularBottleneck(
-            64, padding=1, dropout_prob=0.1, relu=decoder_relu)
+            64, padding=1, dropout_prob=0.1, relu=encoder_relu)
 
         # Stage 5 - Decoder
+        # Supposed to have one more branch here, check below later TODO
         self.upsample5_0 = UpsamplingBottleneck(
-            64, 16, dropout_prob=0.1, relu=decoder_relu)
+            64, 16, dropout_prob=0.1, relu=encoder_relu)
         self.regular5_1 = RegularBottleneck(
-            16, padding=1, dropout_prob=0.1, relu=decoder_relu)
+            16, padding=1, dropout_prob=0.1, relu=encoder_relu)
         self.transposed_conv = nn.ConvTranspose2d(
             16,
             num_classes,
-            kernel_size=3,
+            kernel_size=2,
             stride=2,
-            padding=1,
+            padding=0,
             bias=False)
+
+        # Sigmoid 
+        self.sig_dilated0 = nn.Sequential(
+                nn.Conv2d(128, 32, kernel_size=3, padding=4, dilation=4),
+                nn.BatchNorm2d(32, eps=1e-5),
+                nn.ReLU())
+        self.sig_dropout1 = nn.Dropout2d(p=0.1)
+        self.sig_conv2 = nn.Conv2d(32, 5, kernel_size=1, padding=0)
+        self.sig_softmax3 = nn.Softmax2d()
+        self.sig_avgpool4 = nn.AvgPool2d(kernel_size=2, ceil_mode=False, count_include_pad=True)
+        self.sig_view5 = nn.View()
+        self.sig_linear6 = nn.Sequential(
+                nn.Linear(4600,128),
+                nn.ReLU()
+                nn.Linear(128,6),
+                nn.Sigmoid())
+        
+
+                
+
 
     def forward(self, x):
         # Initial block
@@ -602,6 +645,16 @@ class ENet(nn.Module):
         x = self.asymmetric3_6(x)
         x = self.dilated3_7(x)
 
+        # Sigmoid branch
+        sig = self.sig_dilated0(x)
+        sig = self.sig_dropout1(sig)
+        sig = self.sig_conv2(sig)
+        sig = self.sig_softmax3(sig)
+        sig = self.sig_avgpool4(sig)
+        sig = self.sig_view5(sig)
+        sig = self.linear6(sig)
+        # sigmoid function here
+         
         # Stage 4 - Decoder
         x = self.upsample4_0(x, max_indices2_0, output_size=stage2_input_size)
         x = self.regular4_1(x)
@@ -612,4 +665,6 @@ class ENet(nn.Module):
         x = self.regular5_1(x)
         x = self.transposed_conv(x, output_size=input_size)
 
-        return x
+        # x for crossentropy, sig for bce 'exist'
+
+        return x, sig
