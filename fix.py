@@ -180,7 +180,7 @@ for preds in predicts:
     lanes = rmShort(preds['lanes'], 20) 
     lanes = connect(lanes) 
     lanes = rmShort(lanes, 70) 
-    lanes = cutMax(lanes) 
+    #lanes = cutMax(lanes) 
     raw_file = preds['raw_file']
     run_time = preds['run_time'] 
     data = {'lanes': lanes, 'raw_file': raw_file, 'run_time': run_time}

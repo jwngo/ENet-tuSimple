@@ -195,7 +195,6 @@ class Normalize(CustomTransform):
 
     def __call__(self, sample):
         img = sample.get('img')
-
         img = self.transform(img) 
 
         _sample = sample.copy()

@@ -28,9 +28,9 @@ class tuSimple(data.Dataset):
         self.image_set = image_set
         self.transforms = transforms
 
-        if not os.path.exists(os.path.join(path, "seg_label")):
-            print("seg_label ground truth labels are not generated") 
-            print("Labels will be generated into dir: {} ".format(os.path.join(path, "seg_label")))
+        if not os.path.exists(os.path.join(path, "seg_label6")):
+            print("seg_label6 ground truth labels are not generated") 
+            print("Labels will be generated into dir: {} ".format(os.path.join(path, "seg_label6")))
             self.generate_label() 
 
         self.createIndex() 
@@ -80,13 +80,13 @@ class tuSimple(data.Dataset):
         self.segLabel_list = []
         self.exist_list = []
 
-        listfile = os.path.join(self.data_path, "seg_label", "list", "{}_gt.txt".format(self.image_set))
+        listfile = os.path.join(self.data_path, "seg_label6", "list", "{}_gt.txt".format(self.image_set))
         if not os.path.exists(listfile):
             raise FileNotFoundError("List file doesn't exist. Label has to be generated!")
 
         with open(listfile) as f:
-            for line in f: 
-                line = line.strip() 
+            for line in f:
+                line = line.strip()
                 l = line.split(" ")
                 self.img_list.append(os.path.join(self.data_path, l[0][1:]))  # l[0][1:]  get rid of the first '/' so as for os.path.join
                 self.segLabel_list.append(os.path.join(self.data_path, l[1][1:]))

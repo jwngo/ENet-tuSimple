@@ -7,6 +7,7 @@ import torch
 import torchvision.transforms as transforms 
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
+import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -16,6 +17,7 @@ from tqdm import tqdm
 from PIL import Image
 from datetime import datetime
 from utils.lane_eval.tusimple_eval import LaneEval
+from utils.lane_eval import getLane
 from utils.transforms import * 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -35,7 +37,7 @@ args = parse_args()
 class Trainer(object): 
     def __init__(self): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
-        self.writer = SummaryWriter('tensorboard/sgd3_300') 
+        self.writer = SummaryWriter('tensorboard/sgd6_lane2')
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
         self.device = torch.device(cfg['DEVICE'])
@@ -49,7 +51,7 @@ class Trainer(object):
 
         mean = cfg['DATASET']['MEAN']
         std = cfg['DATASET']['STD']
-        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
+        self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), RandomFlip(0.5), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
         self.val_transform = Compose(Resize(size=(640,368)), ToTensor(), Normalize(mean=mean, std=std))
         data_kwargs = {
@@ -83,10 +85,8 @@ class Trainer(object):
                 drop_last = False,
                 ) 
         # -------- network --------
-        weight = [0.4, 1, 1, 1, 1]
-        tensor = torch.ones((5,), dtype=torch.float32)
-        self.weights = tensor.new_tensor(weight)
-        self.model = ENet(num_classes=5).to(self.device) 
+        weight = [0.4, 1, 1, 1, 1, 1, 1]
+        self.model = ENet(num_classes=7).to(self.device) 
         self.optimizer = optim.SGD(
             self.model.parameters(),
             lr=cfg['OPTIM']['LR'],
@@ -98,7 +98,8 @@ class Trainer(object):
         #    lr = cfg['OPTIM']['LR'],
         #    weight_decay=0,
         #    )
-        self.criterion = nn.CrossEntropyLoss().cuda() 
+        self.criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.4, 1, 1, 1, 1, 1, 1])).cuda() 
+        self.bce = nn.BCELoss().cuda()
     def train(self, epoch):
         running_loss = 0.0
         is_better = True
@@ -110,9 +111,13 @@ class Trainer(object):
         for batch_idx, sample in enumerate(self.train_loader): 
             img = sample['img'].to(self.device) 
             segLabel = sample['segLabel'].to(self.device) 
+            exist = sample['exist'].to(self.device)
+            # outputs is crossentropy, sig is binary cross entropy
+            outputs, sig = self.model(img) 
+            ce = self.criterion(outputs,segLabel)
+            bce = self.bce(sig, exist)
+            loss = ce + (0.1 * bce) 
 
-            outputs = self.model(img) 
-            loss = self.criterion(outputs, segLabel)
 
             self.optimizer.zero_grad() 
             loss.backward() 
@@ -152,8 +157,11 @@ class Trainer(object):
             for batch_idx, sample in enumerate(self.val_loader):
                 img = sample['img'].to(self.device) 
                 segLabel = sample['segLabel'].to(self.device) 
-                outputs = self.model(img) 
-                loss = self.criterion(outputs, segLabel) 
+                exist = sample['exist'].to(self.device)
+                outputs, sig = self.model(img) 
+                ce = self.criterion(outputs, segLabel)
+                bce = self.bce(sig, exist)
+                loss = ce + (0.1*bce) 
                 val_loss += loss.item() 
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
@@ -194,102 +202,148 @@ class Trainer(object):
                 ) 
         progressbar = tqdm(range(len(test_loader))) 
         with torch.no_grad():
-            for batch_idx, sample in enumerate(test_loader): 
-                img = sample['img'].to(self.device) 
-                img_name = sample['img_name']
-                #segLabel = sample['segLabel'].to(self.device) 
-                outputs = self.model(img) 
-                count = 0
-                # Visualisation 
-                for img_idx, _img in enumerate(outputs): 
-                    vis = torch.argmax(_img.squeeze(), dim=0).detach().cpu().numpy() 
-                    label_colors = np.array([(0,0,0), (255,255,255), (255,128,0), (255,255,0), (128,255,0)])
-                    r = np.zeros_like(vis).astype(np.uint8) 
-                    g = np.zeros_like(vis).astype(np.uint8) 
-                    b = np.zeros_like(vis).astype(np.uint8) 
-                    for l in range(0,5):
-                        idx = vis == l
-                        r[idx] = label_colors[l, 0]
-                        g[idx] = label_colors[l, 1]
-                        b[idx] = label_colors[l, 2]
-                    rgb = np.stack([r,g,b], axis=2) 
-                    savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
-                    count += 1
-                    raw_file_name = img_name[img_idx]
-                    '''
-                    raw_img = img[img_idx].cpu().detach().numpy()
-                    raw_img = raw_img.transpose(1, 2, 0)
-                    # Normalize both to 0..1
-                    min_val, max_val = np.min(raw_img), np.max(raw_img)
-                    raw_img = (raw_img - min_val) / (max_val - min_val)
-                    #rgb = rgb / 255.
-                    #stack = np.hstack((raw_img, rgb))
-                    background = Image.fromarray(np.uint8(raw_img*255))
-                    overlay = Image.fromarray(rgb)
-                    new_img = Image.blend(background, overlay, 0.4)
-                    new_img.save(savename, "PNG")
-                    '''
-                    # Generate pred.json TODO refactor into another file in  future
-                    pred_json = {} 
-                    pred_json['lanes'] = []
-                    pred_json['h_samples'] = []
-                    # truncate everything before 'clips' to be consistent with test_label.json gt
-                    pred_json['raw_file'] = raw_file_name[raw_file_name.find('clips'):]
-                    pred_json['run_time'] = 0
-                    h_samples = [x for x in range(80, 360, 5)]
-                    h_sample_actual = [x for x in range(160, 720,10)]
-                    # only predicting 4 lanes
-                    for i in range(1,5): 
-                        pred_json['lanes'].append([])
-                        ii = np.nonzero(vis == i)
-                        x, y = ii[1], ii[0]
-                        coordinates = dict()   
-                        # can use collections here to make more 'pythonic' TODO
-                        for x, y in zip(x,y): 
-                            if y in h_samples:
-                            # multiply by 2 since our resolution is 640x368, gt is 1280x720
-                                if y*2 in coordinates:
-                                    coordinates[y*2].append(int(x*2))
+            with open('exist_out.txt','w') as f:
+                for batch_idx, sample in enumerate(test_loader): 
+                    img = sample['img'].to(self.device) 
+                    img_name = sample['img_name']
+                    #segLabel = sample['segLabel'].to(self.device) 
+                    outputs, sig = self.model(img) 
+                    seg_pred = F.softmax(outputs, dim=1)
+                    seg_pred = seg_pred.detach().cpu().numpy()
+                    exist_pred = sig.detach().cpu().numpy()
+                    count = 0
+
+                    for img_idx in range(len(seg_pred)):
+                        seg = seg_pred[img_idx]
+                        exist = [1 if exist_pred[img_idx ,i] > 0.5 else 0 for i in range(6)]
+                        print(exist,file=f)
+                        lane_coords = getLane.prob2lines_tusimple(seg, exist, resize_shape=(720,1280), y_px_gap=10, pts=56)
+                        for i in range(len(lane_coords)):
+                            # sort lane coords
+                            lane_coords[i] = sorted(lane_coords[i], key=lambda pair:pair[1])
+                        
+                        #print(len(lane_coords))
+                    # Visualisation 
+                        savename = "{}/{}_{}_vis.png".format(os.path.join(os.getcwd(), 'vis'), batch_idx, count) 
+                        count += 1
+                        raw_file_name = img_name[img_idx]
+                        pred_json = {}
+                        pred_json['lanes'] = []
+                        pred_json['h_samples'] = []
+                        # truncate everything before 'clips' to be consistent with test_label.json gt
+                        pred_json['raw_file'] = raw_file_name[raw_file_name.find('clips'):]
+                        pred_json['run_time'] = 0
+
+                        for l in lane_coords:
+
+                            empty = all(lane[0] == -1 for lane in l)
+                            # maybe add if coords all -1 den continue
+                            if len(l)==0:
+                                continue
+                            if empty:
+                                continue
+                            pred_json['lanes'].append([])
+                            for (x,y) in l:
+                                pred_json['lanes'][-1].append(int(x))
+                        for (x, y) in lane_coords[0]:
+                            pred_json['h_samples'].append(int(y))
+                        dump_to_json.append(json.dumps(pred_json))
+                    progressbar.update(1)
+                progressbar.close() 
+
+                with open(os.path.join(os.getcwd(), "pred_json.json"), "w") as f:
+                    for line in dump_to_json:
+                        print(line, end="\n", file=f)
+
+                print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "pred_json.json")))
+           
+                '''
+                        raw_img = img[b].cpu().detach().numpy()
+                        raw_img = raw_img.transpose(1, 2, 0)
+                        # Normalize both to 0..1
+                        min_val, max_val = np.min(raw_img), np.max(raw_img)
+                        raw_img = (raw_img - min_val) / (max_val - min_val)
+                        #rgb = rgb / 255.
+                        #stack = np.hstack((raw_img, rgb))
+                        background = Image.fromarray(np.uint8(raw_img*255))
+                        overlay = Image.fromarray(rgb)
+                        new_img = Image.blend(background, overlay, 0.4)
+                        new_img.save(savename, "PNG")
+                '''
+                        
+                '''
+                        # Generate pred.json TODO refactor into another file in  future
+                        pred_json = {} 
+                        pred_json['lanes'] = []
+                        pred_json['h_samples'] = []
+                        # truncate everything before 'clips' to be consistent with test_label.json gt
+                        pred_json['raw_file'] = raw_file_name[raw_file_name.find('clips'):]
+                        pred_json['run_time'] = 0
+                        h_samples = [x for x in range(80, 360, 5)]
+                        h_sample_actual = [x for x in range(160, 720,10)]
+                        # predicting 6 lanes
+                        for i in range(1,7): 
+                            pred_json['lanes'].append([])
+                            ii = np.nonzero(vis == i)
+                            x, y = ii[1], ii[0]
+                            coordinates = dict()   
+                            # can use collections here to make more 'pythonic' TODO
+                            for x, y in zip(x,y): 
+                                if y in h_samples:
+                                # multiply by 2 since our resolution is 640x368, gt is 1280x720
+                                    if y*2 in coordinates:
+                                        coordinates[y*2].append(int(x*2))
+                                    else: 
+                                        coordinates[y*2] = [x*2]
+
+                            for y_actual in h_sample_actual: 
+                                if y_actual not in coordinates:
+                                    pred_json['lanes'][-1].append(-2)
                                 else: 
-                                    coordinates[y*2] = [x*2]
+                                    # Take the middle of all pixels in this y_coordinate
+                                    pred_json['lanes'][-1].append(int(coordinates[y_actual][len(coordinates[y_actual])//2]))
 
-                        for y_actual in h_sample_actual: 
-                            if y_actual not in coordinates:
-                                pred_json['lanes'][-1].append(-2)
-                            else: 
-                                # Take the middle of all pixels in this y_coordinate
-                                pred_json['lanes'][-1].append(int(coordinates[y_actual][len(coordinates[y_actual])//2]))
+                            empty = all(lane == -2 for lane in pred_json['lanes'][-1])
+                            if empty:
+                                pred_json['lanes'].pop(-1)
+                                continue
+                        pred_json['h_samples'] = h_sample_actual
+                        #print(pred_json) 
+                        dump_to_json.append(json.dumps(pred_json))
+                    #loss = self.criterion(outputs, segLabel) 
+                    #val_loss += loss.item() 
+                    #progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
+                    progressbar.update(1)
+            progressbar.close() 
+            with open(os.path.join(os.getcwd(), "pred_json.json"), "w") as f:
+                for line in dump_to_json:
+                    print(line, end="\n", file=f)
 
-                        empty = all(lane == -2 for lane in pred_json['lanes'][-1])
-                        if empty:
-                            pred_json['lanes'].pop(-1)
-                            continue
-                    pred_json['h_samples'] = h_sample_actual
-                    #print(pred_json) 
-                    dump_to_json.append(json.dumps(pred_json))
-                #loss = self.criterion(outputs, segLabel) 
-                #val_loss += loss.item() 
-                #progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
-                progressbar.update(1)
-        progressbar.close() 
-        with open(os.path.join(os.getcwd(), "pred_json.json"), "w") as f:
-            for line in dump_to_json:
-                print(line, end="\n", file=f)
-
-        print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "pred_json.json")))
-        print("Validation loss: {}".format(val_loss))
-        print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
-        print("Evaluating with TuSimple benchmark eval..") 
-        eval_result = LaneEval.bench_one_submit(os.path.join(os.getcwd(), "pred_json.json"), "/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json")
-        print(eval_result)
-        with open(os.path.join(os.getcwd(), "evaluation_result.txt"), "w") as f: 
-            print(eval_result, file=f)
+            print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "pred_json.json")))
+            print("Validation loss: {}".format(val_loss))
+            print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
+            print("Evaluating with TuSimple benchmark eval..") 
+            eval_result = LaneEval.bench_one_submit(os.path.join(os.getcwd(), "pred_json.json"), "/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json")
+            print(eval_result)
+            with open(os.path.join(os.getcwd(), "evaluation_result.txt"), "w") as f: 
+                print(eval_result, file=f)
+        '''
                 
 if __name__ == '__main__':
     t = Trainer() 
 
     start_epoch = 0 
     if args.eval == False:
+        if args.resume:
+            save_dict = torch.load(os.path.join(os.getcwd(), 'results', 'run.pth'))
+            print("Loaded {}!".format(os.path.join(os.getcwd(),'results', 'run.pth')))
+            t.model.load_state_dict(save_dict['model'])
+            t.optimizer.load_state_dict(save_dict['optim'])
+            start_epoch = save_dict['epoch']
+            best_val_loss = save_dict['best_val_loss']
+
+        else:
+            epoch = 0
         for epoch in range(start_epoch, t.max_epochs):
             epoch_train_loss = t.train(epoch) 
             if epoch % 1 == 0: 

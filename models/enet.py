@@ -7,7 +7,8 @@ class View(nn.Module):
         super(View, self).__init__()
 
     def forward(self, x):
-        return x.view(-1)
+        batch_size = x.shape[0]
+        return x.view(batch_size, -1)
 
 class InitialBlock(nn.Module):
     """The initial block is composed of two branches:
@@ -54,7 +55,7 @@ class InitialBlock(nn.Module):
             bias=bias)
 
         # Extension branch
-        self.ext_branch = nn.MaxPool2d(kernel=2, stride=2, padding=0)
+        self.ext_branch = nn.MaxPool2d(kernel_size=2, stride=2, padding=0)
 
         # Initialize batch normalization to be used after concatenation
         self.batch_norm = nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.1)
@@ -163,7 +164,7 @@ class RegularBottleneck(nn.Module):
                     stride=1,
                     padding=(padding, 0),
                     dilation=dilation,
-                    bias=bias))
+                    bias=bias),
                 # No activation, no batch norm here 
                 nn.Conv2d(
                     internal_channels,
@@ -599,15 +600,12 @@ class ENet(nn.Module):
         self.sig_conv2 = nn.Conv2d(32, 5, kernel_size=1, padding=0)
         self.sig_softmax3 = nn.Softmax2d()
         self.sig_avgpool4 = nn.AvgPool2d(kernel_size=2, ceil_mode=False, count_include_pad=True)
-        self.sig_view5 = nn.View()
+        self.sig_view5 = View()
         self.sig_linear6 = nn.Sequential(
                 nn.Linear(4600,128),
-                nn.ReLU()
+                nn.ReLU(),
                 nn.Linear(128,6),
                 nn.Sigmoid())
-        
-
-                
 
 
     def forward(self, x):
@@ -652,7 +650,7 @@ class ENet(nn.Module):
         sig = self.sig_softmax3(sig)
         sig = self.sig_avgpool4(sig)
         sig = self.sig_view5(sig)
-        sig = self.linear6(sig)
+        sig = self.sig_linear6(sig)
         # sigmoid function here
          
         # Stage 4 - Decoder
