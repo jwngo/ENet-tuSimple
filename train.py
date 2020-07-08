@@ -216,7 +216,6 @@ class Trainer(object):
                     for img_idx in range(len(seg_pred)):
                         seg = seg_pred[img_idx]
                         exist = [1 if exist_pred[img_idx ,i] > 0.5 else 0 for i in range(6)]
-                        print(exist,file=f)
                         lane_coords = getLane.prob2lines_tusimple(seg, exist, resize_shape=(720,1280), y_px_gap=10, pts=56)
                         for i in range(len(lane_coords)):
                             # sort lane coords
