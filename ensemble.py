@@ -31,14 +31,16 @@ def parse_args():
     parser.add_argument("--resume", "-r", action="store_true")
     parser.add_argument("--eval", action="store_true")
     parser.add_argument("exp_name", help="name of experiment")
+    parser.add_argument("exp_name2", help="name of 2nd experiment") 
     args = parser.parse_args() 
     return args
 args = parse_args() 
 
 class Trainer(object): 
-    def __init__(self, exp): 
+    def __init__(self, exp, exp2): 
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
         self.exp_name = exp
+        self.exp_name2 = exp2
         self.writer = SummaryWriter('tensorboard/' + self.exp_name)
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
@@ -89,6 +91,7 @@ class Trainer(object):
         # -------- network --------
         weight = [0.4, 1, 1, 1, 1, 1, 1]
         self.model = ENet(num_classes=7).to(self.device) 
+        self.model2 = ENet(num_classes=7).to(self.device)
         self.optimizer = optim.SGD(
             self.model.parameters(),
             lr=cfg['OPTIM']['LR'],
@@ -211,9 +214,14 @@ class Trainer(object):
                     img_name = sample['img_name']
                     #segLabel = sample['segLabel'].to(self.device) 
                     outputs, sig = self.model(img) 
-                    seg_pred = F.softmax(outputs, dim=1)
+                    outputs2, sig2 = self.model2(img)
+                    added_sig = sig2.add(sig)
+                    div_sig = torch.div(added_sig, 2.0)
+                    added_out = outputs.add(outputs2)
+                    div_out = torch.div(added_out, 2.0)
+                    seg_pred = F.softmax(div_out, dim=1)
                     seg_pred = seg_pred.detach().cpu().numpy()
-                    exist_pred = sig.detach().cpu().numpy()
+                    exist_pred = div_sig.detach().cpu().numpy()
                     count = 0
 
                     for img_idx in range(len(seg_pred)):
@@ -255,7 +263,7 @@ class Trainer(object):
                     for line in dump_to_json:
                         print(line, end="\n", file=f)
 
-                print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), 'results', self.exp_name, "pred_json.json")))
+                print("Saved pred_json.json to {}".format(os.path.join(os.getcwd(), "results", self.exp_name, "pred_json.json")))
            
                 '''
                         raw_img = img[b].cpu().detach().numpy()
@@ -330,7 +338,7 @@ class Trainer(object):
         '''
                 
 if __name__ == '__main__':
-    t = Trainer(args.exp_name) 
+    t = Trainer(args.exp_name, args.exp_name2) 
 
     start_epoch = 0 
     if args.eval == False:
@@ -350,9 +358,14 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth')
+        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run_best.pth')
+        save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run_best.pth')
         save_dict = torch.load(save_name, map_location='cpu') 
+        save_dict2 = torch.load(save_name2, map_location='cpu')
         print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
+        print("Loading", save_name2, "from Epoch {}:".format(save_dict2['epoch']))
         t.model.load_state_dict(save_dict['model'])
         t.model = t.model.to(t.device)             
+        t.model2.load_state_dict(save_dict2['model'])
+        t.model2 = t.model2.to(t.device)
         t.eval() 

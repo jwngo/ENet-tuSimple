@@ -4,8 +4,15 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 import math
+import argparse
 
 from utils.lane_eval.tusimple_eval import LaneEval
+
+def parse_args():
+    parser = argparse.ArgumentParser() 
+    parser.add_argument("exp_name", help='name of experiment')
+    args = parser.parse_args()
+    return args
 
 def show(raw_file, pred_lanes):
     img = cv2.imread(raw_file)
@@ -22,7 +29,7 @@ def show(raw_file, pred_lanes):
 def isShort(lane, thr):
     start = [ i for i, x in enumerate(lane) if x>0 ]
     if not start:
-        print('Lane removed')
+        #print('Lane removed')
         return 1
     start = start[0]
     end = [ i for i, x in reversed(list(enumerate(lane))) if x>0 ][0]
@@ -30,7 +37,7 @@ def isShort(lane, thr):
     x_e = lane[end]
     length = math.sqrt((x_s-x_e)*(x_s-x_e)+(start-end)*(start-end)*100)
     if length <= thr:
-        print('Lane removed') 
+        #print('Lane removed') 
         return 1
     else:
         return 0
@@ -131,7 +138,7 @@ def fixGap(coordinate):
         end = [ i for i, x in reversed(list(enumerate(coordinate))) if x>0 ][0]
         lane = coordinate[start:end+1]
         if any(x < 0 for x in lane):
-            print('gap detected!')
+            #print('gap detected!')
             gap_start = [ i for i, x in enumerate(lane[:-1]) if x>0 and lane[i+1]<0 ]
             gap_end = [ i+1 for i, x in enumerate(lane[:-1]) if x<0 and lane[i+1]>0 ]
             gap_id = [ i for i, x in enumerate(lane) if x<0 ]
@@ -172,9 +179,12 @@ def default(o):
     raise TypeError
 
 
+args = parse_args()
+exp_name = args.exp_name
 thr = 0.2
-pred = open('pred_json_fixed.json', 'w') 
-predicts = [json.loads(line) for line in open('pred_json.json').readlines()]
+path = os.path.join(os.getcwd(), 'results', exp_name)
+pred = open(os.path.join(path, 'pred_json_fixed.json'), 'w') 
+predicts = [json.loads(line) for line in open(os.path.join(path, 'pred_json.json')).readlines()]
 dump_to_json = []
 for preds in predicts: 
     lanes = rmShort(preds['lanes'], 20) 
@@ -187,10 +197,14 @@ for preds in predicts:
     js = json.dumps(data, default=default)
     dump_to_json.append(js)
 
-with open("pred_json_fixed.json", "w") as f:
+with open(os.path.join(path, "pred_json_fixed.json"), "w") as f:
     for line in dump_to_json:
         print(line, end='\n', file=f)
 
-eval_result = LaneEval.bench_one_submit('pred_json_fixed.json', '/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json') 
+print("Evaluating", os.path.join(path, 'pred_json.json'))
+eval_result = LaneEval.bench_one_submit(os.path.join(path, 'pred_json.json'), '/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json') 
+print(eval_result)
+print("Evaluating", os.path.join(path, 'pred_json_fixed.json'))
+eval_result = LaneEval.bench_one_submit(os.path.join(path, 'pred_json_fixed.json'), '/mnt/4TB/ngoj0003/ENet-tuSimple/data_tusimple/dataset/test_label.json') 
 print(eval_result)
 
