@@ -10,21 +10,23 @@ import torch.optim.lr_scheduler as lr_scheduler
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
+import logging
+import time
+import datetime
 
 import torch.optim as optim
 from torch.utils import data
 from tqdm import tqdm
 from PIL import Image
-from datetime import datetime
 from utils.lane_eval.tusimple_eval import LaneEval
 from utils.lane_eval import getLane
 from utils.transforms import * 
+from utils.scheduler.lr_scheduler import get_scheduler
 from torch.utils.tensorboard import SummaryWriter
 
 import yaml
 from dataset.tusimple import tuSimple 
 from models.enet import ENet
-
 best_val_loss = 1e6
 def parse_args():
     parser = argparse.ArgumentParser() 
@@ -52,6 +54,7 @@ class Trainer(object):
         ])
 
         mean = cfg['DATASET']['MEAN']
+        self.max_epochs = cfg['TRAIN']['MAX_EPOCHS']
         std = cfg['DATASET']['STD']
         self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), RandomFlip(0.5), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
@@ -86,6 +89,8 @@ class Trainer(object):
                 pin_memory = True,
                 drop_last = False,
                 ) 
+        self.iters_per_epoch = len(self.train_dataset) // (cfg['TRAIN']['BATCH_SIZE'])
+        self.max_iters = cfg['TRAIN']['MAX_EPOCHS'] * self.iters_per_epoch
         # -------- network --------
         weight = [0.4, 1, 1, 1, 1, 1, 1]
         self.model = ENet(num_classes=7).to(self.device) 
@@ -95,6 +100,7 @@ class Trainer(object):
             weight_decay=cfg['OPTIM']['DECAY'],
             momentum=0.9,
         )
+        self.lr_scheduler = get_scheduler(self.optimizer, max_iters=self.max_iters, iters_per_epoch=self.iters_per_epoch)
         #self.optimizer = optim.Adam(
         #    self.model.parameters(),
         #    lr = cfg['OPTIM']['LR'],
@@ -102,15 +108,19 @@ class Trainer(object):
         #    )
         self.criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.4, 1, 1, 1, 1, 1, 1])).cuda() 
         self.bce = nn.BCELoss().cuda()
-    def train(self, epoch):
+    def train(self, epoch, start_time):
         running_loss = 0.0
         is_better = True
         prev_loss = float('inf') 
+        logging.info('Start training, Total Epochs: {:d}, Total Iterations: {:d}'.format(self.max_epochs, self.max_iters))
         print("Train Epoch: {}".format(epoch))
         self.model.train() 
         epoch_loss = 0
-        progressbar = tqdm(range(len(self.train_loader)))
+        #progressbar = tqdm(range(len(self.train_loader)))
+        iteration = epoch * self.iters_per_epoch if epoch > 0 else 0
+        start_time = start_time
         for batch_idx, sample in enumerate(self.train_loader): 
+            iteration += 1
             img = sample['img'].to(self.device) 
             segLabel = sample['segLabel'].to(self.device) 
             exist = sample['exist'].to(self.device)
@@ -124,19 +134,29 @@ class Trainer(object):
             self.optimizer.zero_grad() 
             loss.backward() 
             self.optimizer.step()
+            self.lr_scheduler.step()
+            #print("LR", self.optimizer.param_groups[0]['lr'])
 
             epoch_loss += loss.item() 
             running_loss += loss.item() 
+            eta_seconds = ((time.time() - start_time) / iteration) * (self.max_iters - iteration) 
+            eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
             iter_idx = epoch * len(self.train_loader) + batch_idx
-            progressbar.set_description("Batch loss: {:.3f}".format(loss.item()))
-            progressbar.update(1)
+            #progressbar.set_description("Batch loss: {:.3f}".format(loss.item()))
+            #progressbar.update(1)
             # Tensorboard
+            if iteration % 10 == 0:
+                logging.info(
+                "Epoch: {:d}/{:d} || Iters: {:d}/{:d} || Lr: {:6f} || "
+                "Loss: {:.4f} || Cost Time: {} || Estimated Time: {}".format(
+                epoch, self.max_epochs, iteration % self.iters_per_epoch, self.iters_per_epoch, 
+                self.optimizer.param_groups[0]['lr'], loss.item(), str(datetime.timedelta(seconds=int(time.time() - start_time))), eta_string))
             if batch_idx % 10 == 9: 
                 self.writer.add_scalar('train loss',
                                 running_loss / 10,
                                 epoch * len(self.train_loader) + batch_idx + 1)
                 running_loss = 0.0
-        progressbar.close() 
+        #progressbar.close() 
         if epoch % 1 == 0: 
             save_dict = {
                     "epoch": epoch,
@@ -144,10 +164,12 @@ class Trainer(object):
                     "optim": self.optimizer.state_dict(),
                     "best_val_loss": best_val_loss,
                     }
-            os.makedirs(os.path.join(os.getcwd(), 'results', self.exp_name), exist_ok=True)
             save_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'run.pth')
+            save_name_epoch = os.path.join(os.getcwd(), 'results', self.exp_name, '{}.pth'.format(epoch))
             torch.save(save_dict, save_name) 
+            torch.save(save_dict, save_name_epoch) 
             print("Model is saved: {}".format(save_name))
+            print("Model is saved: {}".format(save_name_epoch))
             print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         return epoch_loss/len(self.train_loader)
     def val(self, epoch, train_loss):
@@ -331,8 +353,15 @@ class Trainer(object):
                 
 if __name__ == '__main__':
     t = Trainer(args.exp_name) 
+    os.makedirs(os.path.join(os.getcwd(), 'results', t.exp_name), exist_ok=True)
+    logging.basicConfig(filename=str(os.path.join(os.getcwd(), 'results', t.exp_name) + '/log.txt'), level=logging.INFO) 
+    console = logging.StreamHandler() 
+    console.setLevel(logging.INFO)
+    logging.getLogger('').addHandler(console)
+    logger = logging.getLogger(__name__)
 
     start_epoch = 0 
+    start_time = time.time() 
     if args.eval == False:
         if args.resume:
             save_dict = torch.load(os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth'))
@@ -345,7 +374,7 @@ if __name__ == '__main__':
         else:
             epoch = 0
         for epoch in range(start_epoch, t.max_epochs):
-            epoch_train_loss = t.train(epoch) 
+            epoch_train_loss = t.train(epoch, start_time) 
             if epoch % 1 == 0: 
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 

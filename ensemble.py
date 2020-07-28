@@ -191,6 +191,7 @@ class Trainer(object):
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         print("Evaluating.. ") 
         self.model.eval() 
+        self.model2.eval()
         val_loss = 0 
         dump_to_json = [] 
         test_dataset = tuSimple(
@@ -215,18 +216,22 @@ class Trainer(object):
                     #segLabel = sample['segLabel'].to(self.device) 
                     outputs, sig = self.model(img) 
                     outputs2, sig2 = self.model2(img)
-                    added_sig = sig2.add(sig)
-                    div_sig = torch.div(added_sig, 2.0)
-                    added_out = outputs.add(outputs2)
-                    div_out = torch.div(added_out, 2.0)
-                    seg_pred = F.softmax(div_out, dim=1)
+                    #added_sig = sig2.add(sig)
+                    #div_sig = torch.div(added_sig, 2.0)
+                    #added_out = outputs.add(outputs2)
+                    #div_out = torch.div(added_out, 2.0)
+                    seg_pred1 = F.softmax(outputs, dim=1)
+                    seg_pred2 = F.softmax(outputs2, dim=1) 
+                    seg_pred = seg_pred1.add(seg_pred2)
+                    seg_pred = torch.div(seg_pred, 2.0)
                     seg_pred = seg_pred.detach().cpu().numpy()
-                    exist_pred = div_sig.detach().cpu().numpy()
+                    sig_pred = sig.add(sig2)
+                    exist_pred = sig_pred.detach().cpu().numpy()
                     count = 0
 
                     for img_idx in range(len(seg_pred)):
                         seg = seg_pred[img_idx]
-                        exist = [1 if exist_pred[img_idx ,i] > 0.5 else 0 for i in range(6)]
+                        exist = [1 if exist_pred[img_idx ,i] > 0.8 else 0 for i in range(6)]
                         lane_coords = getLane.prob2lines_tusimple(seg, exist, resize_shape=(720,1280), y_px_gap=10, pts=56)
                         for i in range(len(lane_coords)):
                             # sort lane coords
@@ -358,8 +363,8 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run_best.pth')
-        save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run_best.pth')
+        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth')
+        save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run.pth')
         save_dict = torch.load(save_name, map_location='cpu') 
         save_dict2 = torch.load(save_name2, map_location='cpu')
         print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
