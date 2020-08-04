@@ -23,6 +23,8 @@ class SegmentationMetric(object):
             torch.cuda.synchronize() 
             self.total_correct += correct.item()
             self.total_label += labeled.item()
+            print(inter)
+            print(union)
             self.total_inter += inter
             self.total_union += union
 
@@ -35,7 +37,8 @@ class SegmentationMetric(object):
     def get(self, return_category_iou = False):
         pixAcc = 1.0 * self.total_correct / (2.220446049250313e-16 + self.total_label)
         IoU = 1.0 * self.total_inter / (2.220446049250313e-16 + self.total_union)
-        mIoU = IoU.mean().item()
+        print('IoU', IoU)
+        mIoU = IoU[IoU!=0].mean().item()
         if return_category_iou:
             return pixAcc, mIoU, IoU.cpu().numpy()
         return pixAcc, mIoU
@@ -59,18 +62,27 @@ def batch_intersection_union(output, target, nclass):
     mini = 1 
     maxi = nclass
     nbins = nclass
-    predict = torch.argmax(output, 1) + 1 
-    target = target.float() + 1
+    predict = torch.argmax(output, 1)
+    #target = target.float() + 1
 
-    predict = predict.float() * (target > 0).float() 
-    intersection = predict * (predict == target).float() 
+#    predict = predict.float() * (target > 0).float() 
+#    intersection = predict * (predict == target).float() 
+    
+    intersect = predict[predict == target]
+    intersect = intersect.cpu().detach().numpy()
+    predict = predict.cpu().detach().numpy()
+    target = target.cpu().detach().numpy() 
 
-    area_inter = torch.histc(intersection.cpu(), bins=nbins, min=mini, max=maxi)
-    area_pred = torch.histc(predict.cpu(), bins=nbins, min=mini, max=maxi)
-    area_lab = torch.histc(target.cpu(), bins=nbins, min=mini, max=maxi) 
-    area_union = area_pred + area_lab - area_inter
-    assert torch.sum(area_inter > area_union).item() == 0, "Intersection area should be smaller than Union area" 
-    return area_inter.float(), area_union.float() 
+    area_intersect, _ = np.histogram(intersect, bins=nbins)
+    area_pred_label, _ = np.histogram(predict, bins=nbins) 
+    area_label, _ = np.histogram(target, bins=nbins)
+    area_union = area_pred_label + area_label - area_intersect
+    print("intersect and union:")
+    print(area_intersect)
+    print(area_union)
+    assert np.sum(area_intersect > area_union).item() == 0, "Intersection area should be smaller than Union area" 
+#    area_pred_label, _ = np.histogram(predict
+    return area_intersect, area_union 
 
 def pixelAccuracy(imPred, imLab):
     pixel_labeled = np.sum(imLab >= 0)
