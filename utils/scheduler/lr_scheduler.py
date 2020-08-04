@@ -2,13 +2,14 @@ import math
 import torch
 
 class WarmupPolyLR(torch.optim.lr_scheduler._LRScheduler):
-    def __init__(self, optimizer, target_lr=0, max_iters=0, power=0.9, warmup_factor=1.0/3, warmup_iters=500, warmup_method='linear', last_epoch=-1):
+    def __init__(self, optimizer, target_lr=1e-5, max_iters=0, power=0.9, warmup_factor=1.0/3, warmup_iters=500, warmup_method='linear', last_epoch=-1):
         if warmup_method not in ("constant", "linear"): 
             raise ValueError(
                 "Only 'constant' or 'linear' warmup_method accepted "
                 "got {}".format(warmup_method))
 
         self.target_lr = target_lr 
+        print('target_lr:', target_lr)
         self.max_iters = max_iters
         self.power = power
         self.warmup_factor = warmup_factor

@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import logging
 import time
 import datetime
+import sys
 
 import torch.optim as optim
 from torch.utils import data
@@ -20,6 +21,7 @@ from tqdm import tqdm
 from PIL import Image
 from utils.lane_eval.tusimple_eval import LaneEval
 from utils.lane_eval import getLane
+from utils.lane_eval.intersection import SegmentationMetric
 from utils.transforms import * 
 from utils.scheduler.lr_scheduler import get_scheduler
 from torch.utils.tensorboard import SummaryWriter
@@ -28,10 +30,12 @@ import yaml
 from dataset.tusimple import tuSimple 
 from models.enet import ENet
 best_val_loss = 1e6
+original_stdout = sys.stdout
 def parse_args():
     parser = argparse.ArgumentParser() 
     parser.add_argument("--resume", "-r", action="store_true")
     parser.add_argument("--eval", action="store_true")
+    parser.add_argument("--val", action="store_true") 
     parser.add_argument("exp_name", help="name of experiment")
     args = parser.parse_args() 
     return args
@@ -39,6 +43,8 @@ args = parse_args()
 
 class Trainer(object): 
     def __init__(self, exp): 
+        # IoU and pixAcc Metric calculator
+        self.metric = SegmentationMetric(7)
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
         self.exp_name = exp
         self.writer = SummaryWriter('tensorboard/' + self.exp_name)
@@ -173,6 +179,7 @@ class Trainer(object):
             print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         return epoch_loss/len(self.train_loader)
     def val(self, epoch, train_loss):
+        self.metric.reset()
         global best_val_loss
         print("Val Epoch: {}".format(epoch))
         self.model.eval()
@@ -188,15 +195,27 @@ class Trainer(object):
                 bce = self.bce(sig, exist)
                 loss = ce + (0.1*bce) 
                 val_loss += loss.item() 
+                self.metric.update(outputs, segLabel)
+                pixAcc, mIoU = self.metric.get()
+                logging.info("Sample: {:d}, validation pixAcc: {:.3f}, mIoU: {:.3f}".format(
+                    batch_idx + 1, pixAcc * 100, mIoU * 100))
                 progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
                 progressbar.update(1)
                 # Tensorboard
-                if batch_idx + 1 == len(self.val_loader):
-                    self.writer.add_scalar('train - val loss',
-                                    train_loss - (val_loss / len(self.val_loader)),
-                                    epoch)
+                #if batch_idx + 1 == len(self.val_loader):
+                #    self.writer.add_scalar('train - val loss',
+                #                    train_loss - (val_loss / len(self.val_loader)),
+                #                    epoch)
         progressbar.close() 
-        iter_idx = (epoch + 1) * len(self.train_loader) 
+        pixAcc, mIoU, category_iou = self.metric.get(return_category_iou = True)
+        print(category_iou)
+        logging.info('End validation pixAcc: {:.3f}, mIoU: {:.3f}'.format(
+            pixAcc * 100, mIoU * 100))
+        iter_idx = (epoch + 1) * len(self.train_loader)
+        with open('val_out.txt', 'a') as out:
+            sys.stdout = out
+            print(self.exp_name, 'Epoch:', epoch, 'pixAcc: {:.3f}, mIoU: {:.3f}'.format(pixAcc*100, mIoU*100))
+            sys.stdout = original_stdout
         print("Validation loss: {}".format(val_loss)) 
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
         if val_loss < best_val_loss: 
@@ -362,7 +381,19 @@ if __name__ == '__main__':
 
     start_epoch = 0 
     start_time = time.time() 
-    if args.eval == False:
+    if args.val: 
+        for f in os.listdir(os.path.join(os.getcwd(), 'results', t.exp_name)):
+            if f.endswith(".pth"):
+                save_name = os.path.join(os.getcwd(), 'results', t.exp_name, f)
+                save_dict = torch.load(save_name, map_location='cpu')
+                print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
+                t.model.load_state_dict(save_dict['model'])
+                epoch = save_dict['epoch']
+                epoch_train_loss = 0
+                t.model = t.model.to(t.device)             
+                t.val(epoch, epoch_train_loss) 
+
+    elif args.eval == False:
         if args.resume:
             save_dict = torch.load(os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth'))
             print("Loaded {}!".format(os.path.join(os.getcwd(),'results', t.exp_name, 'run.pth')))
@@ -379,7 +410,7 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth')
+        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, '198.pth')
         save_dict = torch.load(save_name, map_location='cpu') 
         print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
         t.model.load_state_dict(save_dict['model'])

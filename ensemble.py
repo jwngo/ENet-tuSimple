@@ -30,8 +30,8 @@ def parse_args():
     parser = argparse.ArgumentParser() 
     parser.add_argument("--resume", "-r", action="store_true")
     parser.add_argument("--eval", action="store_true")
-    parser.add_argument("exp_name", help="name of experiment")
-    parser.add_argument("exp_name2", help="name of 2nd experiment") 
+    parser.add_argument("exp_name", help="name of experiment", default=None)
+    parser.add_argument("exp_name2", help="name of 2nd experiment", default=None) 
     args = parser.parse_args() 
     return args
 args = parse_args() 
@@ -41,6 +41,7 @@ class Trainer(object):
         cfg_path = os.path.join(os.getcwd(), 'config/tusimple_config.yaml') 
         self.exp_name = exp
         self.exp_name2 = exp2
+        
         self.writer = SummaryWriter('tensorboard/' + self.exp_name)
         with open(cfg_path) as file: 
             cfg = yaml.load(file, Loader=yaml.FullLoader)
@@ -344,7 +345,6 @@ class Trainer(object):
                 
 if __name__ == '__main__':
     t = Trainer(args.exp_name, args.exp_name2) 
-
     start_epoch = 0 
     if args.eval == False:
         if args.resume:
@@ -363,12 +363,14 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run.pth')
-        save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run.pth')
-        save_dict = torch.load(save_name, map_location='cpu') 
-        save_dict2 = torch.load(save_name2, map_location='cpu')
-        print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
-        print("Loading", save_name2, "from Epoch {}:".format(save_dict2['epoch']))
+        if args.exp_name:
+            save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run_best.pth')
+            save_dict = torch.load(save_name, map_location='cpu') 
+            print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
+        if args.exp_name2:
+            save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run_best.pth')
+            save_dict2 = torch.load(save_name2, map_location='cpu')
+            print("Loading", save_name2, "from Epoch {}:".format(save_dict2['epoch']))
         t.model.load_state_dict(save_dict['model'])
         t.model = t.model.to(t.device)             
         t.model2.load_state_dict(save_dict2['model'])
