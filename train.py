@@ -30,6 +30,7 @@ import yaml
 from dataset.tusimple import tuSimple 
 from models.enet import ENet
 best_val_loss = 1e6
+best_mIoU = 0
 original_stdout = sys.stdout
 def parse_args():
     parser = argparse.ArgumentParser() 
@@ -60,7 +61,6 @@ class Trainer(object):
         ])
 
         mean = cfg['DATASET']['MEAN']
-        self.max_epochs = cfg['TRAIN']['MAX_EPOCHS']
         std = cfg['DATASET']['STD']
         self.train_transform = Compose(Resize(size=(645,373)), RandomCrop(size=(640,368)), RandomFlip(0.5), Rotation(2), ToTensor(), Normalize(mean=mean, std=std))
 
@@ -181,10 +181,11 @@ class Trainer(object):
     def val(self, epoch, train_loss):
         self.metric.reset()
         global best_val_loss
+        global best_mIoU
         print("Val Epoch: {}".format(epoch))
         self.model.eval()
         val_loss = 0 
-        progressbar = tqdm(range(len(self.val_loader)))
+        #progressbar = tqdm(range(len(self.val_loader)))
         with torch.no_grad(): 
             for batch_idx, sample in enumerate(self.val_loader):
                 img = sample['img'].to(self.device) 
@@ -199,14 +200,14 @@ class Trainer(object):
                 pixAcc, mIoU = self.metric.get()
                 logging.info("Sample: {:d}, validation pixAcc: {:.3f}, mIoU: {:.3f}".format(
                     batch_idx + 1, pixAcc * 100, mIoU * 100))
-                progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
-                progressbar.update(1)
+                #progressbar.set_description("Batch loss: {:3f}".format(loss.item()))
+                #progressbar.update(1)
                 # Tensorboard
                 #if batch_idx + 1 == len(self.val_loader):
                 #    self.writer.add_scalar('train - val loss',
                 #                    train_loss - (val_loss / len(self.val_loader)),
                 #                    epoch)
-        progressbar.close() 
+        #progressbar.close() 
         pixAcc, mIoU, category_iou = self.metric.get(return_category_iou = True)
         print(category_iou)
         logging.info('End validation pixAcc: {:.3f}, mIoU: {:.3f}'.format(
@@ -218,12 +219,24 @@ class Trainer(object):
             sys.stdout = original_stdout
         print("Validation loss: {}".format(val_loss)) 
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
-        if val_loss < best_val_loss: 
-            best_val_loss = val_loss
-            save_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'run.pth') 
-            copy_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'run_best.pth') 
-            print("val loss is lower than best val loss! Model saved to {}".format(copy_name))
-            shutil.copyfile(save_name, copy_name) 
+        if (mIoU * 100) > best_mIoU:
+            best_mIoU = mIoU*100
+            save_dict = {
+                    "epoch": epoch,
+                    "model": self.model.state_dict(),
+                    "optim": self.optimizer.state_dict(),
+                    "best_val_loss": best_val_loss,
+                    "best_mIoU": best_mIoU,
+                    }
+            save_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'best_mIoU.pth')
+            torch.save(save_dict, save_name)
+            print("mIoU is higher than best mIoU! Model saved to {}".format(save_name))
+        #if val_loss < best_val_loss: 
+        #    best_val_loss = val_loss
+        #    save_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'run.pth') 
+        #    copy_name = os.path.join(os.getcwd(), 'results', self.exp_name, 'run_best.pth') 
+        #    print("val loss is lower than best val loss! Model saved to {}".format(copy_name))
+        #    shutil.copyfile(save_name, copy_name) 
     
     def eval(self):
         print("+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*+*")
@@ -383,7 +396,7 @@ if __name__ == '__main__':
     start_time = time.time() 
     if args.val: 
         for f in os.listdir(os.path.join(os.getcwd(), 'results', t.exp_name)):
-            if f.endswith(".pth"):
+            if f.endswith(".pth") and len(f) == 7:
                 save_name = os.path.join(os.getcwd(), 'results', t.exp_name, f)
                 save_dict = torch.load(save_name, map_location='cpu')
                 print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
@@ -410,7 +423,7 @@ if __name__ == '__main__':
                 print("Validation") 
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
-        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, '198.pth')
+        save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'best_mIoU.pth')
         save_dict = torch.load(save_name, map_location='cpu') 
         print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
         t.model.load_state_dict(save_dict['model'])

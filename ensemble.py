@@ -364,11 +364,11 @@ if __name__ == '__main__':
                 t.val(epoch, epoch_train_loss) 
     elif args.eval: 
         if args.exp_name:
-            save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'run_best.pth')
+            save_name = os.path.join(os.getcwd(), 'results', t.exp_name, 'best_mIoU.pth')
             save_dict = torch.load(save_name, map_location='cpu') 
             print("Loading", save_name, "from Epoch {}:".format(save_dict['epoch']))
         if args.exp_name2:
-            save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'run_best.pth')
+            save_name2 = os.path.join(os.getcwd(), 'results', t.exp_name2, 'best_mIoU.pth')
             save_dict2 = torch.load(save_name2, map_location='cpu')
             print("Loading", save_name2, "from Epoch {}:".format(save_dict2['epoch']))
         t.model.load_state_dict(save_dict['model'])
